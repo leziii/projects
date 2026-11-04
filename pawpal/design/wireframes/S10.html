@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>S10 入户确认</title><link rel="stylesheet" href="wf.css"></head><body>
+<div class="top"><a href="index.html">← 全部页面</a><b>S10</b><span>人员端</span><span>灰度低保真 V0.2</span></div>
+<div class="wrap"><div class="phone"><div class="bar"><a href="S09.html">‹</a>入户确认</div><div class="body"><div class="card"><h4>到达记录</h4><div class="row"><span>到达时间</span><span>08:58</span></div><div class="row"><span>预约开始</span><span>09:00</span></div></div><div class="card"><h4>交接方式：预授权</h4><div class="row"><span>状态</span><span>可按授权进入</span></div><div class="row"><span>确认</span><span>☐ 我已成功进入</span></div></div><div class="warn">实时远程确认方式：显示“等待主人确认”。无法进入时：记录联系，转 S13；主人要求等待 → S14。<br>打卡不能单独开始计时，等待时长不抵服务时长。</div></div><div class="foot"><a class="btn sec" href="S13.html">无法交接</a><a class="btn sec" href="S14.html">主人要求等待</a><a class="btn " href="S11.html">确认入户</a></div></div><div class="notes"><h3>S10 入户确认</h3>
+<h5>入口条件</h5><ul><li>S09</li></ul>
+<h5>主要信息</h5><ul><li>预授权或远程确认状态、到达与联系记录</li></ul>
+<h5>按钮可用条件</h5><ul><li>确认入户后才能开始服务</li></ul>
+<h5>成功／失败出口</h5><ul><li>成功 → S11；无法交接 → S13；等待 → S14</li></ul>
+<h5>已定规则（E8-3）</h5><ul><li>每场有自己的状态：待服务 → 已到达 → 服务中（报告、确认在之后）</li><li>“我已到达”在预约开始前 30 分钟起可按；只记录时间，不开始计时</li><li>预授权：到达后勾选“我已成功进入”并确认入户 → 服务开始</li><li>实时确认：到达后主人收到“某某已到达，请确认让其进入”；主人在 O14 点“确认某某已进入” → 服务开始；人员页显示“等待主人确认”并自动刷新</li><li>门外等待不算服务时间</li><li>无法交接 / 主人要求等待在 S13 / S14 的故事中做；现在本页有 WhatsApp 求助</li><li>测试：后台测试工具“让场次 10 分钟后开始”</li></ul><h5>未定规则</h5><ul><li>晚到／付款耗时对等待计费的影响</li></ul></div></div></body></html>

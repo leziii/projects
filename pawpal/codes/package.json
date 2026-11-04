@@ -1,0 +1,41 @@
+{
+  "name": "pawpal",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "build": "pnpm -r build",
+    "predev": "pnpm --filter @pawpal/shared build",
+    "dev": "concurrently -n server,admin,mobile -c blue,green,magenta \"pnpm --filter @pawpal/server dev\" \"pnpm --filter @pawpal/admin-web dev\" \"pnpm --filter @pawpal/mobile dev\"",
+    "pretest": "pnpm --filter @pawpal/shared build",
+    "test": "pnpm -r test",
+    "lint": "eslint . --max-warnings=0",
+    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
+    "typecheck": "pnpm -r typecheck",
+    "e2e": "pnpm --filter @pawpal/e2e e2e",
+    "icons": "pnpm --filter @pawpal/shared build && node scripts/make-icons.mjs",
+    "admin:create": "pnpm --filter @pawpal/shared build && pnpm --filter @pawpal/server admin:create"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.13.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.72.0",
+    "vue-eslint-parser": "^10.3.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "@vueuse/core>vue": "3.4.21",
+        "@vueuse/shared>vue": "3.4.21"
+      }
+    }
+  }
+}

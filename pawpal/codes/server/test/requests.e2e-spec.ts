@@ -1,0 +1,686 @@
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { addDays, entryFromOf, klDate, visitIncome, type BookingDraft, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type VisitTask } from '@pawpal/shared';
+import { randomInt } from 'node:crypto';
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AlertsService } from '../src/alerts/alerts.service';
+import { AppModule } from '../src/app.module';
+import { OrdersService } from '../src/bookings/orders.service';
+import { DbService } from '../src/db/db.service';
+
+// Area Cheras: no browser test uses it, so these caregivers never show up there.
+// E6-1: the chosen caregiver sees the paid order as a request with its deadline (S01, S06; round 25).
+describe('E6-1 caregiver sees requests', () => {
+  let app: INestApplication;
+  const http = () => request(app.getHttpServer());
+  const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+  const day = addDays(klDate(new Date()), 3);
+  const address = { label: 'Home', area: 'Cheras', street: '12 Jalan Genting', unit: 'A-3-1', postcode: '53300', contactName: 'Ali', contactPhone: '012-345 6789' };
+  const db = () => app.get(DbService).pool;
+
+  async function login() {
+    const phone = `+6011${String(randomInt(0, 1e8)).padStart(8, '0')}`;
+    const { devCode } = (await http().post('/api/auth/code').send({ phone }).expect(200)).body;
+    const { token } = (await http().post('/api/auth/login').send({ phone, code: devCode, acceptTerms: true }).expect(200)).body;
+    const { id } = (await http().get('/api/auth/me').set(auth(token)).expect(200)).body;
+    return { phone, token: token as string, id: id as number };
+  }
+
+  async function caregiver() {
+    const c = await login();
+    await http().post('/api/dev/caregiver-status').send({ phone: c.phone, status: 'approved', reason: 'test setup' }).expect(201);
+    await http().get('/api/caregiver/profile').set(auth(c.token)).expect(200);
+    await db().query("UPDATE caregiver_profiles SET display_name = $2, areas = $3, cats = true, dogs = true, max_dog_size = 'large' WHERE user_id = $1", [c.id, 'Siti Aminah', ['Cheras']]);
+    await http().post('/api/auth/role').set(auth(c.token)).send({ role: 'caregiver' }).expect(200);
+    return c;
+  }
+
+  /** An owner pays for a cat and a dog, two visits, with this caregiver. Returns the paid order. */
+  /** existing: order again as the same owner (same address), with the visits `shift` days later. */
+  async function paidOrder(cg: { id: number }, existing?: Awaited<ReturnType<typeof login>>, shift = 0) {
+    const o = existing ?? (await login());
+    const a = existing ? (await http().get('/api/addresses').set(auth(o.token)).expect(200)).body[0] : (await http().post('/api/addresses').set(auth(o.token)).send(address).expect(201)).body;
+    const pets: number[] = [];
+    for (const [kind, name] of [['cat', 'Mimi'], ['dog', 'Bobo']]) {
+      const { rows } = await db().query(`INSERT INTO pets (owner_id, kind, name, birth_year, birth_month, vaccinated, status, breed, weight_kg) VALUES ($1, $2, $3, 2022, 1, true, 'approved', $4, $5) RETURNING id`, [
+        o.id,
+        kind,
+        name,
+        kind === 'dog' ? 'Beagle' : null,
+        kind === 'dog' ? 10 : null,
+      ]);
+      pets.push(Number(rows[0].id));
+    }
+    await http().post('/api/bookings/draft').set(auth(o.token)).send({ petIds: pets, level: 'basic', overtimeUnits: 0, addressId: a.id, visits: [{ date: addDays(day, shift + 1), start: 600 }, { date: addDays(day, shift), start: 540 }] }).expect(200);
+    await http().post('/api/bookings/draft/caregiver').set(auth(o.token)).send({ caregiverId: cg.id }).expect(200);
+    await http().post('/api/bookings/draft/entry').set(auth(o.token)).send({ method: 'live_confirm' }).expect(200);
+    const { order, paymentId } = (await http().post('/api/bookings/draft/pay').set(auth(o.token)).send({ healthConfirmed: true, method: 'tng' }).expect(200)).body as { order: OrderView; paymentId: number };
+    return { owner: o, order, paymentId };
+  }
+  const succeed = (paymentId: number) => http().post(`/api/mock-gateway/payments/${paymentId}/outcome`).send({ outcome: 'success' }).expect(200);
+  const list = async (token: string): Promise<RequestList> => (await http().get('/api/requests').set(auth(token)).expect(200)).body;
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = mod.createNestApplication();
+    app.setGlobalPrefix('api');
+    await app.init();
+  });
+
+  afterAll(() => app.close());
+
+  it('only an approved caregiver in the caregiver role can see requests', async () => {
+    await http().get('/api/requests').expect(401);
+    const owner = await login();
+    expect((await http().get('/api/requests').set(auth(owner.token)).expect(403)).body.code).toBe('NOT_APPROVED');
+    const cg = await caregiver();
+    await http().post('/api/auth/role').set(auth(cg.token)).send({ role: 'owner' }).expect(200);
+    expect((await http().get('/api/requests').set(auth(cg.token)).expect(403)).body.code).toBe('ROLE_REQUIRED');
+  });
+
+  it('a paid order becomes a request for the chosen caregiver only, with area but no street (R25-1, R25-3)', async () => {
+    const cg = await caregiver();
+    const other = await caregiver();
+    const { order, paymentId } = await paidOrder(cg);
+    // Not paid yet: not a request.
+    expect((await list(cg.token)).open).toEqual([]);
+    await succeed(paymentId);
+
+    expect((await http().get('/api/caregiver/home').set(auth(cg.token)).expect(200)).body).toEqual({ newRequests: 1, todayVisits: 0 });
+    const { open, history } = await list(cg.token);
+    expect(history).toEqual([]);
+    const full = (await db().query('SELECT visits FROM orders WHERE id = $1', [order.id])).rows[0].visits as { quote: { total: number } }[];
+    expect(open).toEqual([
+      {
+        orderId: order.id,
+        number: order.number,
+        urgent: false,
+        deadline: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/),
+        firstVisit: { date: day, start: 540 },
+        visits: 2,
+        area: 'Cheras',
+        pets: '1 dog, 1 cat',
+        incomeSen: full.reduce((s, v) => s + Math.round(v.quote.total * 0.85), 0),
+      },
+    ]);
+    expect(JSON.stringify(open)).not.toMatch(/Genting|53300|A-3-1|Ali/);
+
+    const detail: RequestDetail = (await http().get(`/api/requests/${order.id}`).set(auth(cg.token)).expect(200)).body;
+    expect(detail).toMatchObject({ open: true, end: null, petList: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }] });
+    // Visits in time order, each with its own 85%.
+    expect(detail.visitLines).toHaveLength(2);
+    expect(detail.visitLines.reduce((s, v) => s + v.incomeSen, 0)).toBe(detail.incomeSen);
+    expect(detail.visitLines[0].label).toContain(String(Number(day.slice(8))));
+    expect(JSON.stringify(detail)).not.toMatch(/Genting|53300|A-3-1|Ali|entry/);
+
+    expect((await list(other.token)).open).toEqual([]);
+    expect((await http().get(`/api/requests/${order.id}`).set(auth(other.token)).expect(404)).body.code).toBe('REQUEST_NOT_FOUND');
+  });
+
+  it('paying alerts the caregiver at once, with a message that opens the request (R25-6)', async () => {
+    const cg = await caregiver();
+    const { order, paymentId } = await paidOrder(cg);
+    await succeed(paymentId);
+    const log = await db().query<{ kind: string; text: string }>('SELECT kind, text FROM alert_log WHERE user_id = $1 ORDER BY id', [cg.id]);
+    expect(log.rows.map((r) => r.kind)).toContain('new_request');
+    expect(log.rows[0].text).toContain('Cheras');
+    expect(log.rows[0].text).not.toMatch(/Genting|53300/);
+    const msg = await db().query("SELECT id, role, title, link_type, link_id FROM messages WHERE user_id = $1 AND category = 'order' ORDER BY id", [cg.id]);
+    expect(msg.rows[0]).toMatchObject({ role: 'caregiver', link_type: 'request', link_id: order.id });
+    expect(msg.rows[0].title).toMatch(/^New booking request · 2 h 5\d min left|^New booking request · 3 h 0 min left/);
+    const opened = (await http().post(`/api/messages/${msg.rows[0].id}/open`).set(auth(cg.token)).expect(200)).body;
+    expect(opened.latest).toMatchObject({ type: 'request', id: order.id, summary: `Request ${order.number}: Waiting for you`, gone: false });
+    const reminder = await db().query('SELECT payload FROM scheduled_alerts WHERE user_id = $1', [cg.id]);
+    expect(JSON.parse(reminder.rows[0].payload)).toMatchObject({ orderId: order.id });
+  });
+
+  it('a first visit under 6 h away is urgent with 30 minutes (R25-4)', async () => {
+    const cg = await caregiver();
+    const { order, paymentId } = await paidOrder(cg);
+    // Move the visits to about 5 h from now, as if the owner booked a same-day visit.
+    const at = new Date(Date.now() + 5 * 3600e3 + 8 * 3600e3);
+    const date = at.toISOString().slice(0, 10);
+    const start = Math.floor((at.getUTCHours() * 60 + at.getUTCMinutes()) / 30) * 30;
+    const { rows } = await db().query('SELECT visits FROM orders WHERE id = $1', [order.id]);
+    const visits = (rows[0].visits as object[]).map((v, i) => ({ ...v, date: addDays(date, i), start }));
+    await db().query('UPDATE orders SET visits = $2 WHERE id = $1', [order.id, JSON.stringify(visits)]);
+    await succeed(paymentId);
+    const [card] = (await list(cg.token)).open;
+    expect(card.urgent).toBe(true);
+    const title = (await db().query("SELECT title FROM messages WHERE user_id = $1 AND category = 'order'", [cg.id])).rows[0].title as string;
+    expect(title).toMatch(/^Urgent booking request · (29|30) min left$/);
+  });
+
+  it('at the deadline it moves to History as Expired, and the reminder is not sent (R25-5)', async () => {
+    const cg = await caregiver();
+    const { order, paymentId } = await paidOrder(cg);
+    await succeed(paymentId);
+    await http().post('/api/dev/request-expire').send({ number: 'P0' }).expect(404);
+    await http().post('/api/dev/request-expire').send({ number: order.number.toLowerCase() }).expect(200);
+    const { open, history } = await list(cg.token);
+    expect(open).toEqual([]);
+    expect(history).toEqual([expect.objectContaining({ orderId: order.id, number: order.number, end: 'expired', visits: 2, area: 'Cheras' })]);
+    expect((await http().get('/api/caregiver/home').set(auth(cg.token)).expect(200)).body.newRequests).toBe(0);
+    expect((await http().get(`/api/requests/${order.id}`).set(auth(cg.token)).expect(200)).body).toMatchObject({ open: false, end: 'expired' });
+
+    const before = (await db().query('SELECT COUNT(*)::int AS n FROM messages WHERE user_id = $1', [cg.id])).rows[0].n;
+    await db().query("UPDATE scheduled_alerts SET run_at = now() - interval '1 second' WHERE user_id = $1", [cg.id]);
+    await app.get(AlertsService).runDue();
+    expect((await db().query('SELECT COUNT(*)::int AS n FROM messages WHERE user_id = $1', [cg.id])).rows[0].n).toBe(before);
+    expect((await db().query('SELECT done_at FROM scheduled_alerts WHERE user_id = $1', [cg.id])).rows[0].done_at).not.toBeNull();
+
+    // History keeps 30 days.
+    await db().query("UPDATE orders SET accept_deadline = now() - interval '31 days', updated_at = now() - interval '31 days' WHERE id = $1", [order.id]);
+    expect((await list(cg.token)).history).toEqual([]);
+  });
+
+  it('a request still open gets its reminder', async () => {
+    const cg = await caregiver();
+    const { paymentId } = await paidOrder(cg);
+    await succeed(paymentId);
+    await db().query("UPDATE scheduled_alerts SET run_at = now() - interval '1 second' WHERE user_id = $1", [cg.id]);
+    await app.get(AlertsService).runDue();
+    const titles = (await db().query("SELECT title, link_type FROM messages WHERE user_id = $1 AND category = 'order' ORDER BY id", [cg.id])).rows;
+    expect(titles[1]).toMatchObject({ title: 'Request closes in 10 min', link_type: 'request' });
+  });
+
+  it('a paused caregiver sees why, and no requests (R25-8)', async () => {
+    const cg = await caregiver();
+    expect((await http().get('/api/caregiver/paused').set(auth(cg.token)).expect(200)).body).toEqual({ paused: false, reason: null });
+    await http().post('/api/dev/caregiver-status').send({ phone: cg.phone, status: 'suspended', reason: 'Missed two visits in a row' }).expect(201);
+    expect((await http().get('/api/caregiver/paused').set(auth(cg.token)).expect(200)).body).toEqual({ paused: true, reason: 'Missed two visits in a row' });
+    expect((await http().get('/api/requests').set(auth(cg.token)).expect(403)).body.code).toBe('NOT_APPROVED');
+  });
+
+  describe('E6-2 accept or reject the whole order', () => {
+    const accept = (token: string, id: number) => http().post(`/api/requests/${id}/accept`).set(auth(token));
+    const reject = (token: string, id: number, reason?: string) => http().post(`/api/requests/${id}/reject`).set(auth(token)).send({ reason });
+
+    it('accept books the whole order, locks the visits in the schedule and tells the owner (R26-1, R26-3, R26-4, R26-6)', async () => {
+      const cg = await caregiver();
+      const other = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      // Before accepting: no street, no contact.
+      expect((await http().get(`/api/requests/${order.id}`).set(auth(cg.token)).expect(200)).body.address).toBeNull();
+      expect((await accept(other.token, order.id).expect(404)).body.code).toBe('REQUEST_NOT_FOUND');
+
+      const detail: RequestDetail = (await accept(cg.token, order.id).expect(200)).body;
+      expect(detail).toMatchObject({ open: false, end: 'accepted', address: { street: '12 Jalan Genting', unit: 'A-3-1', postcode: '53300', contactName: 'Ali', contactPhone: '+60123456789' } });
+      expect(JSON.stringify(detail)).not.toMatch(/emergency|entry/i);
+
+      const booked = await db().query('SELECT visit_date, start_min, source, label FROM booked_visits WHERE order_id = $1 ORDER BY visit_date', [order.id]);
+      expect(booked.rows.map((r) => [r.start_min, r.source])).toEqual([
+        [540, 'order'],
+        [600, 'order'],
+      ]);
+      expect(booked.rows[0].label).toBe(`${order.number} · Mimi, Bobo`);
+      const schedule = (await http().get('/api/caregiver/schedule').set(auth(cg.token)).expect(200)).body;
+      expect(schedule.visits.filter((v: { label: string }) => v.label.startsWith(order.number))).toHaveLength(2);
+
+      const seen: OrderView = (await http().get(`/api/orders/${order.id}`).set(auth(owner.token)).expect(200)).body;
+      expect(seen.status).toBe('accepted');
+      const msg = await db().query("SELECT title, body, link_type FROM messages WHERE user_id = $1 AND title LIKE '%accepted%'", [owner.id]);
+      expect(msg.rows[0]).toMatchObject({ title: 'Siti A. accepted your booking', link_type: 'order' });
+      expect(msg.rows[0].body).toContain(`Order ${order.number} is booked. First visit: `);
+
+      const { open, history } = await list(cg.token);
+      expect(open).toEqual([]);
+      expect(history[0]).toMatchObject({ orderId: order.id, end: 'accepted' });
+      // Only once (R26-6).
+      expect((await accept(cg.token, order.id).expect(409)).body.code).toBe('REQUEST_CLOSED');
+      expect((await reject(cg.token, order.id, 'other').expect(409)).body.code).toBe('REQUEST_CLOSED');
+    });
+
+    it('a clash with the schedule refuses the whole order and lists the clashing visit (R26-1)', async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      // Another booked visit at 9:30 on the first visit's day (plus the travel buffer) clashes with the 9:00 visit only.
+      await http().post('/api/dev/test-visit').send({ phone: cg.phone, date: day, start: 570, minutes: 45 }).expect(201);
+      const refused = (await accept(cg.token, order.id).expect(409)).body;
+      expect(refused).toMatchObject({ code: 'SCHEDULE_CLASH', clashes: [{ date: day, start: 540 }] });
+      expect(refused.message).toMatch(/^This visit clashes with your schedule: .+ · 9:00 am\. Free that time in your schedule, or say no\.$/);
+      expect((await db().query('SELECT status FROM orders WHERE id = $1', [order.id])).rows[0].status).toBe('pending_accept');
+      expect((await db().query('SELECT COUNT(*)::int AS n FROM booked_visits WHERE order_id = $1', [order.id])).rows[0].n).toBe(0);
+    });
+
+    it('at the deadline accept is refused: the deadline wins (R26-2)', async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await db().query('UPDATE orders SET accept_deadline = now() WHERE id = $1', [order.id]);
+      expect((await accept(cg.token, order.id).expect(409)).body).toMatchObject({ code: 'REQUEST_CLOSED', message: 'This request is no longer open' });
+    });
+
+    it('reject needs a reason, fails the order with a full refund, and the owner never sees the reason (R26-5)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      expect((await reject(cg.token, order.id).expect(400)).body.code).toBe('BAD_REASON');
+      expect((await reject(cg.token, order.id, 'busy').expect(400)).body.code).toBe('BAD_REASON');
+
+      const detail: RequestDetail = (await reject(cg.token, order.id, 'too_far').expect(200)).body;
+      expect(detail).toMatchObject({ open: false, end: 'rejected', address: null });
+      const row = (await db().query('SELECT status, end_reason, reject_reason FROM orders WHERE id = $1', [order.id])).rows[0];
+      expect(row).toEqual({ status: 'failed', end_reason: 'rejected', reject_reason: 'too_far' });
+
+      const seen: OrderView = (await http().get(`/api/orders/${order.id}`).set(auth(owner.token)).expect(200)).body;
+      expect(seen).toMatchObject({ status: 'failed', endReason: 'rejected', refundSen: seen.paySen });
+      const msgs = (await db().query("SELECT category, title, body FROM messages WHERE user_id = $1 AND category = 'refund'", [owner.id])).rows;
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0].body).toContain('Siti A. could not take it. You can book again with another caregiver');
+      expect(JSON.stringify(msgs)).not.toMatch(/far/i);
+      expect((await list(cg.token)).history[0]).toMatchObject({ orderId: order.id, end: 'rejected' });
+    });
+  });
+
+  describe('E6-3 deadlines enforced', () => {
+    const orders = () => app.get(OrdersService);
+
+    it('past the deadline the order fails with a full refund, once, and both sides are told (R27-1 … R27-3)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const later = await paidOrder(cg);
+      await succeed(later.paymentId);
+      await db().query("UPDATE orders SET accept_deadline = now() - interval '1 second' WHERE id = $1", [order.id]);
+
+      expect(await orders().expireDue()).toBeGreaterThanOrEqual(1);
+      expect((await db().query('SELECT status, end_reason FROM orders WHERE id = $1', [order.id])).rows[0]).toEqual({ status: 'failed', end_reason: 'timeout' });
+      // The other request still has time.
+      expect((await db().query('SELECT status FROM orders WHERE id = $1', [later.order.id])).rows[0].status).toBe('pending_accept');
+
+      const seen: OrderView = (await http().get(`/api/orders/${order.id}`).set(auth(owner.token)).expect(200)).body;
+      expect(seen).toMatchObject({ status: 'failed', endReason: 'timeout', refundSen: seen.paySen });
+      const refund = (await db().query("SELECT title, body FROM messages WHERE user_id = $1 AND category = 'refund'", [owner.id])).rows;
+      expect(refund).toEqual([
+        { title: `Refund: RM${seen.paySen / 100}`, body: `Order ${order.number}: Siti A. did not answer in time. RM${seen.paySen / 100} is refunded in full. You can book again with another caregiver.` },
+      ]);
+      const told = (await db().query("SELECT role, title, body, link_type FROM messages WHERE user_id = $1 AND title LIKE '%expired'", [cg.id])).rows;
+      expect(told).toEqual([{ role: 'caregiver', title: `Request ${order.number} expired`, body: `Request ${order.number} expired. You did not answer in time.`, link_type: 'request' }]);
+
+      // A second run changes nothing: one refund only.
+      await orders().expireDue();
+      expect((await db().query("SELECT COUNT(*)::int AS n FROM payments WHERE kind = 'refund' AND ref LIKE $1", [`order-${order.id}-refund-%`])).rows[0].n).toBe(1);
+      expect((await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(409)).body.code).toBe('REQUEST_CLOSED');
+      expect((await list(cg.token)).history.find((h) => h.orderId === order.id)).toMatchObject({ end: 'expired' });
+    });
+
+    it('the test tool expires and refunds at once (R27-5)', async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post('/api/dev/request-expire').send({ number: order.number }).expect(200);
+      expect((await db().query('SELECT status, end_reason FROM orders WHERE id = $1', [order.id])).rows[0]).toEqual({ status: 'failed', end_reason: 'timeout' });
+    });
+  });
+
+  describe('E6-4 owner withdraws', () => {
+    const refunds = (id: number) => db().query("SELECT COUNT(*)::int AS n FROM payments WHERE kind = 'refund' AND ref LIKE $1", [`order-${id}-refund-%`]);
+
+    it('withdraw while waiting: cancelled, full refund once, both told, accept refused (R28-1 … R28-6)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const seen: OrderView = (await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200)).body;
+      expect(seen).toMatchObject({ status: 'cancelled', endReason: 'withdrawn', refundSen: seen.paySen });
+      const money = `RM${seen.paySen / 100}`;
+      expect((await db().query("SELECT title, body FROM messages WHERE user_id = $1 AND category = 'refund'", [owner.id])).rows).toEqual([
+        { title: `Refund: ${money}`, body: `Order ${order.number}: you withdrew. ${money} is refunded in full.` },
+      ]);
+      expect((await db().query("SELECT role, title, body, link_type FROM messages WHERE user_id = $1 AND title LIKE '%withdrawn'", [cg.id])).rows).toEqual([
+        { role: 'caregiver', title: `Request ${order.number} withdrawn`, body: `Request ${order.number} withdrawn. The owner withdrew it.`, link_type: 'request' },
+      ]);
+      expect((await db().query("SELECT from_status, to_status, actor_type FROM status_history WHERE entity = 'order' AND entity_id = $1 ORDER BY id DESC LIMIT 1", [order.id])).rows[0]).toEqual({
+        from_status: 'pending_accept',
+        to_status: 'cancelled',
+        actor_type: 'owner',
+      });
+
+      const accept = (await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(409)).body;
+      expect(accept).toMatchObject({ code: 'REQUEST_WITHDRAWN', message: 'The owner withdrew this request' });
+      expect((await list(cg.token)).history.find((h) => h.orderId === order.id)).toMatchObject({ end: 'withdrawn' });
+
+      // Twice: refused, still one refund.
+      expect((await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(409)).body.code).toBe('NOT_WAITING');
+      expect((await refunds(order.id)).rows[0].n).toBe(1);
+    });
+
+    it('after the caregiver accepted, withdraw is refused and says so (R28-6)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      const body = (await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(409)).body;
+      expect(body).toMatchObject({ code: 'ALREADY_ACCEPTED', message: 'Siti A. already accepted. The booking is confirmed.' });
+      expect((await refunds(order.id)).rows[0].n).toBe(0);
+    });
+
+    it('withdraw and accept at the same moment: exactly one wins (R28-6)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const [w, a] = await Promise.all([http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)), http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token))]);
+      expect([w.status, a.status].sort()).toEqual([200, 409]);
+      const { status } = (await db().query('SELECT status FROM orders WHERE id = $1', [order.id])).rows[0];
+      expect(status).toBe(w.status === 200 ? 'cancelled' : 'accepted');
+      expect((await refunds(order.id)).rows[0].n).toBe(w.status === 200 ? 1 : 0);
+    });
+
+    it('only the owner can withdraw, and only a paid order', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      const stranger = await login();
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(stranger.token)).expect(404);
+      expect((await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(409)).body.code).toBe('NOT_WAITING');
+      await succeed(paymentId);
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200);
+    });
+  });
+
+  describe('E6-5 book again', () => {
+    const withdrawn = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200);
+      return { cg, owner, order };
+    };
+
+    it('copies the old order into the draft, not the caregiver or promo; paying makes a new order (R29-1 … R29-3, R29-6)', async () => {
+      const { cg, owner, order } = await withdrawn();
+      const d: BookingDraft = (await http().post(`/api/orders/${order.id}/rebook`).set(auth(owner.token)).send({}).expect(200)).body;
+      expect(d.petIds).toEqual(order.pets.map((p) => p.id));
+      expect({ level: d.level, overtimeUnits: d.overtimeUnits }).toEqual({ level: order.level, overtimeUnits: 0 });
+      expect(d.visits).toEqual(order.visits.map(({ date, start }) => ({ date, start })));
+      expect(d.entry?.method).toBe('live_confirm');
+      expect(d.caregiver).toBeNull();
+      expect(d.promoCode).toBeNull();
+      expect(d.caregiverNote).toBe(`Copied from order ${order.number}. Choose a caregiver again.`);
+      expect(d.summary.blocks).toEqual([]);
+
+      await http().post('/api/bookings/draft/caregiver').set(auth(owner.token)).send({ caregiverId: cg.id }).expect(200);
+      const again = (await http().post('/api/bookings/draft/pay').set(auth(owner.token)).send({ healthConfirmed: true, method: 'tng' }).expect(200)).body as { order: OrderView };
+      expect(again.order.number).not.toBe(order.number);
+      // The old order keeps its own refund.
+      const old: OrderView = (await http().get(`/api/orders/${order.id}`).set(auth(owner.token)).expect(200)).body;
+      expect(old).toMatchObject({ status: 'cancelled', endReason: 'withdrawn', refundSen: old.paySen });
+      expect(again.order.refundSen).toBe(0);
+    });
+
+    it('asks before replacing a booking in progress (R29-5)', async () => {
+      const { owner, order } = await withdrawn();
+      await http().post('/api/bookings/draft').set(auth(owner.token)).send({ petIds: [], level: 'basic', overtimeUnits: 0, addressId: null, visits: [] }).expect(200);
+      expect((await http().post(`/api/orders/${order.id}/rebook`).set(auth(owner.token)).send({}).expect(409)).body).toMatchObject({ code: 'DRAFT_EXISTS', message: 'Replace your current booking?' });
+      const d: BookingDraft = (await http().post(`/api/orders/${order.id}/rebook`).set(auth(owner.token)).send({ replace: true }).expect(200)).body;
+      expect(d.visits).toHaveLength(2);
+    });
+
+    it('leaves out visits now in the past and says so (R29-4)', async () => {
+      const { owner, order } = await withdrawn();
+      await db().query(`UPDATE orders SET visits = jsonb_set(visits, '{0,date}', '"2020-01-01"') WHERE id = $1`, [order.id]);
+      const d: BookingDraft = (await http().post(`/api/orders/${order.id}/rebook`).set(auth(owner.token)).send({}).expect(200)).body;
+      expect(d.visits).toHaveLength(1);
+      expect(d.caregiverNote).toBe(`Copied from order ${order.number}. 1 visit was in the past and was removed. Choose a caregiver again.`);
+    });
+
+    it('only for the owner, and only after a failed or withdrawn order (R29-1)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      const stranger = await login();
+      await succeed(paymentId);
+      expect((await http().post(`/api/orders/${order.id}/rebook`).set(auth(owner.token)).send({ replace: true }).expect(409)).body.code).toBe('NOT_REBOOKABLE');
+      await http().post(`/api/orders/${order.id}/rebook`).set(auth(stranger.token)).send({ replace: true }).expect(404);
+    });
+  });
+
+  describe('E7-1 my orders', () => {
+    const page = async (token: string, q = '') => (await http().get(`/api/orders${q}`).set(auth(token)).expect(200)).body as OrderPage;
+
+    it('lists paid orders newest first with four filters; unpaid tries are left out (R30-2 … R30-4)', async () => {
+      const cg = await caregiver();
+      const first = await paidOrder(cg);
+      const owner = first.owner;
+      await succeed(first.paymentId);
+      await http().post(`/api/orders/${first.order.id}/withdraw`).set(auth(owner.token)).expect(200);
+      const booked = await paidOrder(cg, owner, 2);
+      await succeed(booked.paymentId);
+      await http().post(`/api/requests/${booked.order.id}/accept`).set(auth(cg.token)).expect(200);
+      const waiting = await paidOrder(cg, owner, 4);
+      await succeed(waiting.paymentId);
+      await paidOrder(cg, owner, 6); // not paid: never listed
+
+      const all = await page(owner.token);
+      expect(all.rows.map((r) => r.number)).toEqual([waiting.order.number, booked.order.number, first.order.number]);
+      expect(all.next).toBeNull();
+      const [w, b, e] = all.rows;
+      expect(w).toMatchObject({ status: 'pending_accept', visits: 2, refundSen: 0, firstVisit: { date: addDays(day, 4), start: 540 } });
+      expect(w.acceptDeadline).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+      expect(b).toMatchObject({ status: 'accepted', acceptDeadline: null });
+      expect(e).toMatchObject({ status: 'cancelled', endReason: 'withdrawn', refundSen: e.paySen });
+
+      expect((await page(owner.token, '?filter=waiting')).rows.map((r) => r.id)).toEqual([waiting.order.id]);
+      expect((await page(owner.token, '?filter=booked')).rows.map((r) => r.id)).toEqual([booked.order.id]);
+      expect((await page(owner.token, '?filter=ended')).rows.map((r) => r.id)).toEqual([first.order.id]);
+      expect((await page(owner.token, '?filter=nonsense')).rows).toHaveLength(3);
+      // Someone else sees none of them.
+      expect((await page((await login()).token)).rows).toEqual([]);
+    });
+
+    it('gives 20 at a time (R30-5)', async () => {
+      const cg = await caregiver();
+      const first = await paidOrder(cg);
+      await succeed(first.paymentId);
+      for (let i = 0; i < 20; i++) await succeed((await paidOrder(cg, first.owner)).paymentId);
+      const one = await page(first.owner.token);
+      expect(one.rows).toHaveLength(20);
+      expect(one.next).toBe(one.rows[19].id);
+      const two = await page(first.owner.token, `?before=${one.next}`);
+      expect(two.rows.map((r) => r.id)).toEqual([first.order.id]);
+      expect(two.next).toBeNull();
+    });
+  });
+
+  describe('E7-2 order detail', () => {
+    it('has the visits, the owner\'s address and the refund the bank confirmed (R31-3, R31-4, R31-6)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const get = async () => (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+
+      const waiting = await get();
+      expect(waiting).toMatchObject({ number: order.number, status: 'pending_accept', refundSen: 0, refundDoneSen: 0, entryMethod: 'live_confirm' });
+      expect(waiting.visits).toHaveLength(2);
+      // E7-3 O14 reads each visit's own price and length from here (R32-2).
+      for (const v of waiting.visits) expect(v.quote.totalMinutes).toBeGreaterThan(0);
+      expect(waiting.visits.reduce((n, v) => n + v.paidSen, 0)).toBe(waiting.paySen);
+      expect(waiting.address).toEqual({ area: 'Cheras', street: '12 Jalan Genting', unit: 'A-3-1', postcode: '53300', contactName: 'Ali', contactPhone: '+60123456789' });
+
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200);
+      // Still with the bank: on its way, not refunded.
+      await db().query("UPDATE payments SET status = 'pending' WHERE kind = 'refund' AND ref LIKE $1", [`order-${order.id}-refund-%`]);
+      expect(await get()).toMatchObject({ refundSen: waiting.paySen, refundDoneSen: 0 });
+      await db().query("UPDATE payments SET status = 'succeeded' WHERE kind = 'refund' AND ref LIKE $1", [`order-${order.id}-refund-%`]);
+      expect(await get()).toMatchObject({ refundSen: waiting.paySen, refundDoneSen: waiting.paySen });
+
+      const stranger = await login();
+      await http().get(`/api/orders/${order.id}/detail`).set(auth(stranger.token)).expect(404);
+    });
+  });
+
+  describe('E8-1 my tasks', () => {
+    const tasks = async (token: string, q = '') => (await http().get(`/api/caregiver/tasks${q}`).set(auth(token)).expect(200)).body as TaskList;
+
+    it('lists visits of accepted orders by day, with 14 days of counts (R33-2 … R33-5)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const waiting = await paidOrder(cg, owner, 6);
+      await succeed(waiting.paymentId);
+
+      // Waiting requests are not tasks.
+      expect((await tasks(cg.token, `?date=${day}`)).tasks).toEqual([]);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+
+      const list = await tasks(cg.token, `?date=${day}`);
+      expect(list.days).toHaveLength(14);
+      expect(list.days[0].date).toBe(klDate(new Date()));
+      expect(list.days.find((d) => d.date === day)!.count).toBe(1);
+      expect(list.days.find((d) => d.date === addDays(day, 1))!.count).toBe(1);
+      expect(list.date).toBe(day);
+      expect(list.bufferMin).toBe(30);
+      expect(list.tasks).toEqual([
+        { orderId: order.id, index: order.visits.findIndex((v) => v.date === day), number: order.number, date: day, start: 540, minutes: order.visits.find((v) => v.date === day)!.quote.totalMinutes, area: 'Cheras', pets: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }], status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null },
+      ]);
+      // A date outside the 14 days falls back to today.
+      expect((await tasks(cg.token, '?date=2020-01-01')).date).toBe(klDate(new Date()));
+    });
+
+    it('the home card counts today\'s tasks (R33-1)', async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      expect((await http().get('/api/caregiver/home').set(auth(cg.token)).expect(200)).body.todayVisits).toBe(0);
+      await db().query(`UPDATE orders SET visits = jsonb_set(visits, '{0,date}', to_jsonb($2::text)) WHERE id = $1`, [order.id, klDate(new Date())]);
+      expect((await http().get('/api/caregiver/home').set(auth(cg.token)).expect(200)).body.todayVisits).toBe(1);
+    });
+
+    it('only caregivers see tasks', async () => {
+      const owner = await login();
+      await http().get('/api/caregiver/tasks').set(auth(owner.token)).expect(403);
+    });
+  });
+
+  describe('E8-2 visit details', () => {
+    const viewed = async (id: number) =>
+      (await db().query("SELECT COUNT(*)::int AS n FROM status_history WHERE entity = 'order' AND entity_id = $1 AND reason LIKE 'Entry instructions viewed%'", [id])).rows[0].n as number;
+
+    it('shows pets, address and income; entry instructions only inside the window, and each opening is logged (R34-2 … R34-5)', async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      // Not accepted yet: no visit page.
+      await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(404);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+
+      const v = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      const first = order.visits[0];
+      expect(v).toMatchObject({ orderId: order.id, index: 0, number: order.number, date: first.date, start: first.start, status: 'todo', level: 'basic', entryMethod: 'live_confirm', entry: null });
+      expect(v.incomeSen).toBe(visitIncome(first));
+      expect(v.entryFrom).toBe(entryFromOf(first));
+      expect(v.petDetails.map((p) => [p.name, p.breed, p.weightKg])).toEqual([['Mimi', null, null], ['Bobo', 'Beagle', 10]]);
+      expect(v.address).toMatchObject({ area: 'Cheras', street: '12 Jalan Genting', unit: 'A-3-1', contactName: 'Ali' });
+      expect(await viewed(order.id)).toBe(0);
+
+      // Move the visit to start in 30 min: the window is open.
+      const kl = new Date(Date.now() + 8 * 3600_000);
+      const start = kl.getUTCHours() * 60 + kl.getUTCMinutes() + 30;
+      await db().query(`UPDATE orders SET visits = jsonb_set(jsonb_set(visits, '{0,date}', to_jsonb($2::text)), '{0,start}', to_jsonb($3::int)) WHERE id = $1`, [order.id, klDate(new Date()), start]);
+      const open = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(open.entry).toEqual({ keyLock: '', guard: '', notes: '' });
+      expect(await viewed(order.id)).toBe(1);
+    });
+
+    it('only the order\'s caregiver, and only a visit that exists', async () => {
+      const cg = await caregiver();
+      const other = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(other.token)).expect(404);
+      await http().get(`/api/caregiver/tasks/${order.id}/9`).set(auth(cg.token)).expect(404);
+    });
+  });
+
+  describe('E8-3 arrive and confirm entry', () => {
+    const accepted = async (method: 'live_confirm' | 'pre_authorised' = 'live_confirm') => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      if (method !== 'live_confirm') await db().query('UPDATE orders SET entry_method = $2 WHERE id = $1', [order.id, method]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order };
+    };
+    const soon = (number: string, index = 0) => http().post('/api/dev/visit-soon').send({ number, index }).expect(200);
+    const arrive = (token: string, id: number, i = 0) => http().post(`/api/caregiver/tasks/${id}/${i}/arrive`).set(auth(token));
+
+    it('arrive works only from 30 minutes before, once; it records the time and the history (R35-1, R35-2)', async () => {
+      const { cg, order } = await accepted();
+      // Visit 1 is tomorrow: too early.
+      const early = await arrive(cg.token, order.id).expect(409);
+      expect(early.body).toMatchObject({ code: 'CANNOT_ARRIVE' });
+      expect(early.body.message).toMatch(/^You can tap this from \d/);
+
+      const moved = (await soon(order.number)).body as { date: string; start: number };
+      expect(moved.date).toBe(klDate(new Date(Date.now() + 10 * 60_000)));
+      const booked = (await db().query('SELECT visit_date::text AS d, start_min FROM booked_visits WHERE order_id = $1 ORDER BY id LIMIT 1', [order.id])).rows[0];
+      expect([booked.d, booked.start_min]).toEqual([moved.date, moved.start]);
+
+      const v = (await arrive(cg.token, order.id).expect(200)).body as VisitTask;
+      expect(v.status).toBe('arrived');
+      expect(Date.now() - Date.parse(v.arrivedAt!)).toBeLessThan(60_000);
+      expect(v.enteredAt).toBeNull();
+      expect((await arrive(cg.token, order.id).expect(409)).body.message).toBe('Arrival is already recorded');
+      const h = await db().query("SELECT from_status, to_status FROM status_history WHERE entity = 'visit' AND entity_id = $1", [order.id]);
+      expect(h.rows).toEqual([{ from_status: 'todo', to_status: 'arrived' }]);
+
+      const tasks = (await http().get(`/api/caregiver/tasks?date=${moved.date}`).set(auth(cg.token)).expect(200)).body as TaskList;
+      expect(tasks.tasks.find((t) => t.orderId === order.id)?.status).toBe('arrived');
+    });
+
+    it('pre-authorised: the caregiver confirms entry after arriving; the owner gets no message (R35-3)', async () => {
+      const { cg, owner, order } = await accepted('pre_authorised');
+      await soon(order.number);
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/enter`).set(auth(cg.token)).expect(409)).body.code).toBe('NOT_ARRIVED');
+      const before = (await db().query("SELECT COUNT(*)::int AS n FROM messages WHERE user_id = $1 AND title LIKE '%has arrived'", [owner.id])).rows[0].n;
+      await arrive(cg.token, order.id).expect(200);
+      expect((await db().query("SELECT COUNT(*)::int AS n FROM messages WHERE user_id = $1 AND title LIKE '%has arrived'", [owner.id])).rows[0].n).toBe(before);
+      const v = (await http().post(`/api/caregiver/tasks/${order.id}/0/enter`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(v).toMatchObject({ status: 'in_service', enteredBy: 'caregiver' });
+      expect(v.enteredAt).not.toBeNull();
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/enter`).set(auth(cg.token)).expect(409)).body.message).toBe('Entry is already confirmed');
+      // The owner cannot confirm a pre-authorised visit.
+      expect((await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(409)).body.code).toBe('NOT_LIVE_CONFIRM');
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0]).toMatchObject({ status: 'in_service', enteredBy: 'caregiver' });
+      expect(d.runs[1]).toEqual({ status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null });
+    });
+
+    it('live confirm: the owner is told, confirms from the order, and the caregiver is told (R35-4, R35-5)', async () => {
+      const { cg, owner, order } = await accepted();
+      await soon(order.number);
+      expect((await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(409)).body).toMatchObject({ code: 'NOT_ARRIVED', message: 'The caregiver has not arrived yet' });
+      await arrive(cg.token, order.id).expect(200);
+      const m = (await db().query("SELECT role, body, link_type, link_id FROM messages WHERE user_id = $1 AND title LIKE '%has arrived'", [owner.id])).rows;
+      expect(m).toHaveLength(1);
+      expect(m[0]).toMatchObject({ role: 'owner', link_type: 'order', link_id: order.id });
+      expect(m[0].body).toMatch(/has arrived for the visit at .+\. Confirm to let them in\.$/);
+      // Only the owner confirms a live-confirm visit.
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/enter`).set(auth(cg.token)).expect(409)).body.code).toBe('OWNER_CONFIRMS');
+      const stranger = await login();
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(stranger.token)).expect(404);
+      await http().post(`/api/orders/${order.id}/visits/9/confirm-entry`).set(auth(owner.token)).expect(404);
+
+      const d = (await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0]).toMatchObject({ status: 'in_service', enteredBy: 'owner' });
+      expect((await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(409)).body.code).toBe('ALREADY_ENTERED');
+      const told = (await db().query("SELECT link_type FROM messages WHERE user_id = $1 AND title = 'The owner let you in'", [cg.id])).rows;
+      expect(told).toEqual([{ link_type: 'request' }]);
+      const v = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(v).toMatchObject({ status: 'in_service', enteredBy: 'owner' });
+      const h = await db().query("SELECT to_status, actor_type FROM status_history WHERE entity = 'visit' AND entity_id = $1 ORDER BY id", [order.id]);
+      expect(h.rows.map((r) => r.to_status)).toEqual(['arrived', 'in_service']);
+    });
+
+    it('only the order\'s caregiver can arrive; the dev tool needs a real order', async () => {
+      const { order } = await accepted();
+      const other = await caregiver();
+      await soon(order.number);
+      await arrive(other.token, order.id).expect(404);
+      await http().post('/api/dev/visit-soon').send({ number: 'P00000000000', index: 0 }).expect(404);
+    });
+  });
+});

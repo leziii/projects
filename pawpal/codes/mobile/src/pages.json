@@ -1,0 +1,209 @@
+{
+	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "PawPal"
+			}
+		},
+		{
+			"path": "pages/login/index",
+			"style": {
+				"navigationBarTitleText": "Log in"
+			}
+		},
+		{
+			"path": "pages/me/index",
+			"style": {
+				"navigationBarTitleText": "Me"
+			}
+		},
+		{
+			"path": "pages/invite/index",
+			"style": {
+				"navigationBarTitleText": "Invite friends"
+			}
+		},
+		{
+			"path": "pages/role/index",
+			"style": {
+				"navigationBarTitleText": "Switch role"
+			}
+		},
+		{
+			"path": "pages/messages/index",
+			"style": {
+				"navigationBarTitleText": "Messages"
+			}
+		},
+		{
+			"path": "pages/messages/view",
+			"style": {
+				"navigationBarTitleText": "Message"
+			}
+		},
+		{
+			"path": "pages/caregiver/profile",
+			"style": {
+				"navigationBarTitleText": "Profile & services"
+			}
+		},
+		{
+			"path": "pages/caregiver/schedule",
+			"style": {
+				"navigationBarTitleText": "Schedule"
+			}
+		},
+		{
+			"path": "pages/booking/index",
+			"style": {
+				"navigationBarTitleText": "Book a visit"
+			}
+		},
+		{
+			"path": "pages/booking/caregivers",
+			"style": {
+				"navigationBarTitleText": "Choose a caregiver"
+			}
+		},
+		{
+			"path": "pages/booking/entry",
+			"style": {
+				"navigationBarTitleText": "How to get in"
+			}
+		},
+		{
+			"path": "pages/booking/confirm",
+			"style": {
+				"navigationBarTitleText": "Confirm and pay"
+			}
+		},
+		{
+			"path": "pages/pay/test",
+			"style": {
+				"navigationBarTitleText": "Test payment"
+			}
+		},
+		{
+			"path": "pages/orders/index",
+			"style": {
+				"navigationBarTitleText": "My orders",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/orders/detail",
+			"style": {
+				"navigationBarTitleText": "Order details",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/orders/visit",
+			"style": {
+				"navigationBarTitleText": "Visit details",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/caregiver/tasks",
+			"style": {
+				"navigationBarTitleText": "My tasks",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/caregiver/visit",
+			"style": {
+				"navigationBarTitleText": "Visit",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/orders/result",
+			"style": {
+				"navigationBarTitleText": "Payment result",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/caregivers/detail",
+			"style": {
+				"navigationBarTitleText": "Caregiver"
+			}
+		},
+		{
+			"path": "pages/apply/index",
+			"style": {
+				"navigationBarTitleText": "Become a caregiver"
+			}
+		},
+		{
+			"path": "pages/apply/status",
+			"style": {
+				"navigationBarTitleText": "Application status"
+			}
+		},
+		{
+			"path": "pages/apply/guide",
+			"style": {
+				"navigationBarTitleText": "Care guide"
+			}
+		},
+		{
+			"path": "pages/pets/index",
+			"style": {
+				"navigationBarTitleText": "My pets"
+			}
+		},
+		{
+			"path": "pages/pets/status",
+			"style": {
+				"navigationBarTitleText": "Pet status"
+			}
+		},
+		{
+			"path": "pages/pets/edit",
+			"style": {
+				"navigationBarTitleText": "Pet profile"
+			}
+		},
+		{
+			"path": "pages/addresses/index",
+			"style": {
+				"navigationBarTitleText": "Addresses & contacts"
+			}
+		},
+		{
+			"path": "pages/addresses/edit",
+			"style": {
+				"navigationBarTitleText": "Address"
+			}
+		},
+		{
+			"path": "pages/caregiver/index",
+			"style": {
+				"navigationBarTitleText": "PawPal Caregiver"
+			}
+		},
+		{
+			"path": "pages/caregiver/requests",
+			"style": {
+				"navigationBarTitleText": "Requests",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/caregiver/request",
+			"style": {
+				"navigationBarTitleText": "Request"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "PawPal",
+		"navigationBarBackgroundColor": "#FFFFFF",
+		"backgroundColor": "#EEF8F6"
+	}
+}

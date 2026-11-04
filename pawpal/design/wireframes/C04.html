@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>C04 切换身份</title><link rel="stylesheet" href="wf.css"></head><body>
+<div class="top"><a href="index.html">← 全部页面</a><b>C04</b><span>共用</span><span>灰度低保真 V0.2</span></div>
+<div class="wrap"><div class="phone"><div class="bar"><a href="C03.html">‹</a>切换身份</div><div class="body"><div style="height:200px;background:#999;opacity:.3;border-radius:6px"></div><div class="card"><h4>选择身份</h4><div class="row"><span>◉ 主人</span><span>当前</span></div><div class="row"><span>○ 照护人员</span><span>已审核</span></div></div><div class="card"><h4>还不是照护人员？</h4><a class="btn sec" href="S02.html">申请成为照护人员</a></div><div class="warn">切换身份不改变订单归属；不能接自己的订单。权限由账户资格决定。</div></div><div class="foot"><a class="btn sec" href="O01.html">切到主人</a><a class="btn " href="S01.html">切到人员</a></div></div><div class="notes"><h3>C04 切换身份</h3>
+<h5>入口条件</h5><ul><li>我的</li><li>跨角色消息</li></ul>
+<h5>主要信息</h5><ul><li>可用身份、当前身份、申请入口</li></ul>
+<h5>按钮可用条件</h5><ul><li>未审核人员 → 只显示申请入口</li></ul>
+<h5>成功／失败出口</h5><ul><li>主人 → O01；人员 → S01；申请 → S02</li></ul>
+<h5>已定规则（E2-2）</h5><ul><li>身份按每次登录保存，默认主人</li><li>只有已审核人员能切到人员；待审核、被拒、被暂停都不能切，并显示原因</li><li>人员被暂停后自动回到主人身份</li><li>申请入口在 E4-1 开放</li></ul></div></div></body></html>
