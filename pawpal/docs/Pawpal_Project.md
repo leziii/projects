@@ -210,7 +210,7 @@ flowchart LR
 | My tasks (S08) | Home card + Me → Caregiver; 14-day date row with counts; task time, status, area, pets, length, order number; gap line, red when under the buffer; accepted-order visits only; cancelled greyed; empty "No tasks on this day." | Built (E8-1) |
 | Visit (S09) | From S08; time, status, service, number + copy, income; pets with health note; entry method always, instructions 2 h before to end (logged, not when cancelled); address + contact with Call; start button placeholder until E8-3 | Built (E8-2) |
 | Confirm entry (S10, O14) | Visit status To do → Arrived → In service; Arrived from 30 min before (no clock); Pre-authorised: tick + Confirm entry; Live confirm: owner confirms on O14 after an arrival message; O14 shows arrived/entered times and who confirmed; Test tool moves a visit to start in 10 min | Built (E8-3) |
-| Record service (S11) | Opens after entry; served time vs minimum; checklist from pets (feed, water, litter for cats, walk for dogs) saved per tick; up to 9 photos saved at once, deletable; finish under minimum asks first; overtime and problem buttons later | Decided (KF, 4 Nov) |
+| Record service (S11) | Opens after entry; served time vs minimum; checklist from pets (feed, water, litter for cats, walk for dogs) saved per tick; up to 9 photos saved at once, deletable; finish under minimum asks first; overtime and problem buttons later | Built (E8-4) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -301,6 +301,7 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E8-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 4 Nov 2026 |
 | E8-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (past visits say "Hidden: the visit time has passed"; order numbers may pass 999 a day) | 4 Nov 2026 |
 | E8-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 4 Nov 2026 |
+| E8-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (owner can also confirm entry on O13) | 4 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -817,7 +818,7 @@ All business rules are decided. Only these remain:
 | R35-1 | Visit status | Each accepted visit has its own status: To do → Arrived → In service (Report sent, Confirmed later); shown on S08, O13, O14 |
 | R35-2 | Arrived | "I've arrived" works from 30 min before the planned start; records the time; does not start the service clock |
 | R35-3 | Pre-authorised | After arriving, tick "I got in" + Confirm entry → service starts then |
-| R35-4 | Live confirm | After arriving, the owner gets "{name} has arrived. Confirm to let them in."; owner taps "Confirm {name} is in" on O14 → service starts; caregiver sees "Waiting for the owner to confirm" (page updates by itself) |
+| R35-4 | Live confirm | After arriving, the owner gets "{name} has arrived. Confirm to let them in."; owner taps "Confirm {name} is in" on O14 → service starts; caregiver sees "Waiting for the owner to confirm" (page updates by itself); the button also shows on O13 under the visit's status (KF hand test, 4 Nov) |
 | R35-5 | Fair time (R3-4) | Waiting at the door never counts; O14 shows "Arrived 8:58 am" and "Entered 9:02 am (confirmed by you / by the caregiver)" |
 | R35-6 | Can't get in / wait | S13 / S14 come with their stories; WhatsApp help on S10 for now |
 | R35-7 | Testing | Admin Test tools "Move a visit to start soon" (starts in 10 min) |

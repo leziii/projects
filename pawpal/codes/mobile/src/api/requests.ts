@@ -1,5 +1,5 @@
-import type { RejectReason, RequestDetail, RequestList, TaskList, VisitTask } from '@pawpal/shared';
-import { api } from './client';
+import type { CheckItem, RejectReason, RequestDetail, RequestList, TaskList, VisitTask } from '@pawpal/shared';
+import { ApiError, api, apiBase, getToken } from './client';
 
 export interface CaregiverHome {
   newRequests: number;
@@ -22,3 +22,26 @@ export const getVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiv
 /** S10 (E8-3): "I've arrived", and for Pre-authorised the caregiver's entry confirm. */
 export const arriveVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/arrive`, {});
 export const enterVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/enter`, {});
+/** S11 (E8-4): tick an item, add or delete a photo, see a photo (private, so loaded with the login token). */
+export const checkItem = (orderId: number, i: number, item: CheckItem, done: boolean) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/check`, { item, done });
+export const deleteVisitPhoto = (orderId: number, i: number, photoId: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/photos/${photoId}/delete`, {});
+
+export async function uploadVisitPhoto(orderId: number, i: number, file: Blob): Promise<VisitTask> {
+  const form = new FormData();
+  form.append('photo', file, 'photo.jpg');
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}/api/caregiver/tasks/${orderId}/${i}/photos`, { method: 'POST', body: form, headers: { authorization: `Bearer ${getToken()}` } });
+  } catch {
+    throw new ApiError('OFFLINE', 'Upload failed. Check your connection and try again', 0);
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+  if (!res.ok) throw new ApiError(body.code ?? `HTTP_${res.status}`, res.status === 413 ? 'Photo is too big (max 10 MB)' : (body.message ?? 'Upload failed'), res.status, body);
+  return body as VisitTask;
+}
+
+export async function visitPhotoUrl(orderId: number, i: number, photoId: number): Promise<string> {
+  const res = await fetch(`${apiBase()}/api/caregiver/tasks/${orderId}/${i}/photos/${photoId}`, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new ApiError('NO_PHOTO', 'Could not load the photo', res.status);
+  return URL.createObjectURL(await res.blob());
+}

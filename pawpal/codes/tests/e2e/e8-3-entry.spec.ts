@@ -40,9 +40,12 @@ test('live confirm: arrive, the owner confirms, both see who confirmed', async (
   await expect(page.locator('[data-test=waiting-owner]')).toHaveText('Waiting for the owner to confirm');
   await expect(page.locator('[data-test=confirm-entry]')).toHaveCount(0);
 
-  // R35-4, R35-5: the owner confirms on O14.
+  // R35-4, R35-5: the button is on the order (O13) and on the visit (O14); here the owner uses O14.
   const owner = await browser.newPage();
-  await mobileSession(owner, r.token, `/pages/orders/visit?id=${order.id}&i=0`);
+  await mobileSession(owner, r.token, `/pages/orders/detail?id=${order.id}`);
+  await expect(owner.locator('[data-test=visit-status]').first()).toHaveText('Caregiver arrived');
+  await expect(owner.locator('[data-test=visit] [data-test=confirm-entry]')).toHaveCount(1);
+  await owner.goto(`${MOBILE}/pages/orders/visit?id=${order.id}&i=0`);
   await expect(owner.locator('[data-test=visit-status]')).toHaveText('Caregiver arrived');
   await expect(owner.locator('[data-test=visit-actual]')).toHaveText(new RegExp(`^Arrived ${CLOCK}$`));
   await expect(owner.locator('[data-test=arrived-note]')).toHaveText(/^\S+ \S\. has arrived\. Confirm to let them in\.$/);
@@ -54,9 +57,12 @@ test('live confirm: arrive, the owner confirms, both see who confirmed', async (
   await expect(owner.locator('[data-test=visit-status]').first()).toHaveText('In service');
   await owner.close();
 
-  // The caregiver's page refreshes by itself.
-  await expect(page.locator('[data-test=visit-status]')).toHaveText('In service', { timeout: 15_000 });
+  // The caregiver's page refreshes by itself and opens the service page (R36-1).
+  await expect(page).toHaveURL(new RegExp(`pages/caregiver/service\\?id=${order.id}&i=0`), { timeout: 15_000 });
+  await page.goto(`${MOBILE}/pages/caregiver/visit?id=${order.id}&i=0`);
+  await expect(page.locator('[data-test=visit-status]')).toHaveText('In service');
   await expect(page.locator('[data-test=entered-at]')).toHaveText(new RegExp(`^Entered ${CLOCK} \\(confirmed by the owner\\)$`));
+  await expect(page.locator('[data-test=continue-service]')).toBeVisible();
 });
 
 // E8-3 Pre-authorised: the caregiver ticks "I got in" and confirms entry.
@@ -71,6 +77,8 @@ test('pre-authorised: arrive, tick and confirm entry; the owner sees it was the 
   await expect(page.locator('[data-test=confirm-entry]')).toHaveAttribute('disabled', 'true');
   await page.locator('[data-test=entered-tick]').click();
   await page.locator('[data-test=confirm-entry]').click();
+  await expect(page).toHaveURL(new RegExp(`pages/caregiver/service\\?id=${order.id}&i=0`));
+  await page.goto(`${MOBILE}/pages/caregiver/visit?id=${order.id}&i=0`);
   await expect(page.locator('[data-test=visit-status]')).toHaveText('In service');
   await expect(page.locator('[data-test=entered-at]')).toHaveText(new RegExp(`^Entered ${CLOCK} \\(confirmed by you\\)$`));
 
@@ -84,4 +92,20 @@ test('pre-authorised: arrive, tick and confirm entry; the owner sees it was the 
   await expect(owner.locator('[data-test=visit-handover]')).toHaveText(new RegExp(`^Entered ${CLOCK} \\(confirmed by the caregiver\\)$`));
   await expect(owner.locator('[data-test=confirm-entry]')).toHaveCount(0);
   await owner.close();
+});
+
+// KF hand test: the owner can confirm straight from the order (O13), under the visit's status.
+test('live confirm from the order page', async ({ page, browser, request }) => {
+  const { r, order } = await accepted(request, browser, 'live_confirm');
+  expect((await request.post(`${API}/dev/visit-soon`, { data: { number: order.number, index: 0 } })).ok()).toBe(true);
+  expect((await request.post(`${API}/caregiver/tasks/${order.id}/0/arrive`, { headers: r.caregiver.headers })).ok()).toBe(true);
+
+  await mobileSession(page, r.token, `/pages/orders/detail?id=${order.id}`);
+  const first = page.locator('[data-test=visit]').first();
+  await expect(first.locator('[data-test=visit-status]')).toHaveText('Caregiver arrived');
+  await first.locator('[data-test=confirm-entry]').click();
+  await expect(first.locator('[data-test=visit-status]')).toHaveText('In service');
+  await expect(page.locator('[data-test=confirm-entry]')).toHaveCount(0);
+  // The tap did not open the visit page.
+  await expect(page).toHaveURL(/pages\/orders\/detail/);
 });

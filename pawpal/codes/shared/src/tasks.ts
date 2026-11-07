@@ -1,6 +1,7 @@
 /**
  * E8-1 "My tasks" (S08, R33-1 … R33-6): the caregiver's visits of accepted orders, day by day.
  */
+import type { CheckRow } from './service';
 import { visitTime, type EntryMethod } from './booking';
 import { addDays, dayText, klDate, timeText } from './schedule';
 import type { PetKind, ServiceLevel } from './rules';
@@ -99,6 +100,10 @@ export interface VisitTask extends Task {
   entry: { keyLock: string; guard: string; notes: string } | null;
   /** When the instructions open, KL time "YYYY-MM-DD HH:MM". */
   entryFrom: string;
+  /** E8-4 (R36-3): the visit's checklist with what is ticked. */
+  checklist: CheckRow[];
+  /** E8-4 (R36-4): ids of the photos taken so far, oldest first. */
+  photos: number[];
 }
 
 /** R34-4: is now inside the entry window of this visit? */

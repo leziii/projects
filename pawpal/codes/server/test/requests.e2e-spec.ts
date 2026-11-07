@@ -683,4 +683,58 @@ describe('E6-1 caregiver sees requests', () => {
       await http().post('/api/dev/visit-soon').send({ number: 'P00000000000', index: 0 }).expect(404);
     });
   });
+
+  describe('E8-4 record service', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const inService = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order };
+    };
+    const base = (id: number) => `/api/caregiver/tasks/${id}/0`;
+
+    it('needs the service to have started (R36-1)', async () => {
+      const { cg, order } = await inService();
+      expect((await http().post(`${base(order.id)}/check`).set(auth(cg.token)).send({ item: 'feed', done: true }).expect(409)).body.code).toBe('NOT_IN_SERVICE');
+      expect((await http().post(`${base(order.id)}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(409)).body.code).toBe('NOT_IN_SERVICE');
+      const v = (await http().get(base(order.id)).set(auth(cg.token)).expect(200)).body as VisitTask;
+      // A cat and a dog: all four items.
+      expect(v.checklist).toEqual([{ item: 'feed', done: false }, { item: 'water', done: false }, { item: 'litter', done: false }, { item: 'walk', done: false }]);
+      expect(v.photos).toEqual([]);
+    });
+
+    it('ticks save at once; photos are saved, private, up to 9, and can be deleted (R36-3, R36-4, R36-7)', async () => {
+      const { cg, owner, order } = await inService();
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      await http().post(`${base(order.id)}/arrive`).set(auth(cg.token)).expect(200);
+      await http().post(`${base(order.id)}/enter`).set(auth(cg.token)).expect(200);
+
+      let v = (await http().post(`${base(order.id)}/check`).set(auth(cg.token)).send({ item: 'walk', done: true }).expect(200)).body as VisitTask;
+      expect(v.checklist.find((c) => c.item === 'walk')!.done).toBe(true);
+      await http().post(`${base(order.id)}/check`).set(auth(cg.token)).send({ item: 'walk', done: true }).expect(200);
+      v = (await http().post(`${base(order.id)}/check`).set(auth(cg.token)).send({ item: 'walk', done: false }).expect(200)).body;
+      expect(v.checklist.every((c) => !c.done)).toBe(true);
+      expect((await http().post(`${base(order.id)}/check`).set(auth(cg.token)).send({ item: 'nap', done: true }).expect(400)).body.code).toBe('BAD_ITEM');
+
+      expect((await http().post(`${base(order.id)}/photos`).set(auth(cg.token)).attach('photo', Buffer.from('not an image'), 'a.txt').expect(400)).body.code).toBe('PHOTO_TYPE');
+      for (let n = 1; n <= 9; n++) v = (await http().post(`${base(order.id)}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200)).body;
+      expect(v.photos).toHaveLength(9);
+      expect((await http().post(`${base(order.id)}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(409)).body.code).toBe('TOO_MANY_PHOTOS');
+
+      const img = await http().get(`${base(order.id)}/photos/${v.photos[0]}`).set(auth(cg.token)).expect(200);
+      expect(img.headers['content-type']).toBe('image/jpeg');
+      expect(img.headers['cache-control']).toBe('private, no-store');
+      // Others cannot see it: another caregiver, or the owner here (the owner sees it with the report, E9-1).
+      const other = await caregiver();
+      await http().get(`${base(order.id)}/photos/${v.photos[0]}`).set(auth(other.token)).expect(404);
+      await http().get(`${base(order.id)}/photos/${v.photos[0]}`).set(auth(owner.token)).expect(403);
+
+      v = (await http().post(`${base(order.id)}/photos/${v.photos[0]}/delete`).set(auth(cg.token)).expect(200)).body;
+      expect(v.photos).toHaveLength(8);
+      await http().post(`${base(order.id)}/photos/999999999/delete`).set(auth(cg.token)).expect(404);
+    });
+  });
 });

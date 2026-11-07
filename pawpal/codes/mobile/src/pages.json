@@ -120,6 +120,18 @@
 			}
 		},
 		{
+			"path": "pages/caregiver/service",
+			"style": {
+				"navigationBarTitleText": "Service in progress"
+			}
+		},
+		{
+			"path": "pages/caregiver/report",
+			"style": {
+				"navigationBarTitleText": "Service report"
+			}
+		},
+		{
 			"path": "pages/orders/result",
 			"style": {
 				"navigationBarTitleText": "Payment result",

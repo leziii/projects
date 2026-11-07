@@ -1,6 +1,8 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import type { RequestDetail, RequestList, TaskList, User, VisitTask } from '@pawpal/shared';
+import { SERVICE_RULES, type RequestDetail, type RequestList, type TaskList, type User, type VisitTask } from '@pawpal/shared';
 import { AuthGuard, CurrentUser, NeedsRole } from '../auth/auth.guard';
 import { OrdersService } from './orders.service';
 import { RequestsService, type CaregiverHome, type PausedInfo } from './requests.service';
@@ -48,6 +50,48 @@ export class RequestsController {
   @NeedsRole('caregiver')
   enter(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number): Promise<VisitTask> {
     return this.requests.enter(user, orderId, i);
+  }
+
+  /** E8-4 S11: tick or untick one checklist item (R36-3). */
+  @Post('caregiver/tasks/:orderId/:i/check')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  check(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { item?: unknown; done?: unknown }): Promise<VisitTask> {
+    return this.requests.check(user, orderId, i, body?.item, body?.done);
+  }
+
+  /** E8-4 S11: multipart field "photo", a JPEG or PNG up to 10 MB (R36-4). */
+  @Post('caregiver/tasks/:orderId/:i/photos')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: SERVICE_RULES.photoMaxBytes, files: 1 } }))
+  addPhoto(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @UploadedFile() file?: Express.Multer.File): Promise<VisitTask> {
+    return this.requests.addPhoto(user, orderId, i, file?.buffer);
+  }
+
+  @Post('caregiver/tasks/:orderId/:i/photos/:photoId/delete')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  deletePhoto(
+    @CurrentUser() user: User,
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @Param('i', ParseIntPipe) i: number,
+    @Param('photoId', ParseIntPipe) photoId: number,
+  ): Promise<VisitTask> {
+    return this.requests.deletePhoto(user, orderId, i, photoId);
+  }
+
+  @Get('caregiver/tasks/:orderId/:i/photos/:photoId')
+  @NeedsRole('caregiver')
+  async photo(
+    @CurrentUser() user: User,
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @Param('i', ParseIntPipe) i: number,
+    @Param('photoId', ParseIntPipe) photoId: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { data, mime } = await this.requests.photo(user, orderId, i, photoId);
+    res.set({ 'content-type': mime, 'cache-control': 'private, no-store' }).send(data);
   }
 
   /** Any logged-in user: tells a paused caregiver why (R25-8). */

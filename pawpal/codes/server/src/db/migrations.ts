@@ -545,4 +545,25 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  {
+    id: '027_visit_service',
+    sql: [
+      // E8-4 (round 36): the checklist ticks and photos of a visit while it is in service.
+      `CREATE TABLE visit_checks (
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        item VARCHAR(10) NOT NULL CHECK (item IN ('feed', 'water', 'litter', 'walk')),
+        done_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        PRIMARY KEY (order_id, idx, item)
+      )`,
+      `CREATE TABLE visit_photos (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        file_key VARCHAR(80) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX visit_photos_visit ON visit_photos (order_id, idx)',
+    ],
+  },
 ];

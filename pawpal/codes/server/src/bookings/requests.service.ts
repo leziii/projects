@@ -1,6 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   REQUEST_RULES,
+  SERVICE_RULES,
+  checklistFor,
+  isCheckItem,
+  type CheckItem,
   firstVisitOf,
   NOT_STARTED,
   arriveFromText,
@@ -30,6 +34,7 @@ import {
 } from '@pawpal/shared';
 import { AddressesService } from '../addresses/addresses.service';
 import { DbService, ts } from '../db/db.service';
+import { FileStore, IMAGE_MIME, imageType } from '../files/file-store';
 import { SecretBox } from '../files/secret-box';
 import { HistoryService } from '../history/history.service';
 import { MessagesService } from '../messages/messages.service';
@@ -77,6 +82,7 @@ export class RequestsService {
     private readonly history: HistoryService,
     private readonly runs: VisitRunsService,
     private readonly messages: MessagesService,
+    private readonly files: FileStore,
   ) {}
 
   async list(user: User): Promise<RequestList> {
@@ -184,7 +190,61 @@ export class RequestsService {
       entryMethod: o.entry_method,
       entry,
       entryFrom: entryFromOf(task),
+      ...(await this.service(Number(o.id), index, o.pets)),
     };
+  }
+
+  /** E8-4 (R36-3, R36-4): the checklist with its ticks, and the photo ids. */
+  private async service(orderId: number, index: number, pets: { kind: PetKind }[]): Promise<Pick<VisitTask, 'checklist' | 'photos'>> {
+    const done = await this.db.pool.query<{ item: CheckItem }>('SELECT item FROM visit_checks WHERE order_id = $1 AND idx = $2', [orderId, index]);
+    const photos = await this.db.pool.query<{ id: string }>('SELECT id FROM visit_photos WHERE order_id = $1 AND idx = $2 ORDER BY id', [orderId, index]);
+    const ticked = new Set(done.rows.map((r) => r.item));
+    return { checklist: checklistFor(pets).map((item) => ({ item, done: ticked.has(item) })), photos: photos.rows.map((r) => Number(r.id)) };
+  }
+
+  /** This caregiver's visit, which must be in service (R36-1). */
+  private async inService(user: User, orderId: number, index: number): Promise<VisitTask> {
+    const v = await this.visit(user, orderId, index);
+    if (v.status !== 'in_service') throw new ConflictException({ code: 'NOT_IN_SERVICE', message: 'The service has not started' });
+    return v;
+  }
+
+  /** R36-3: tick or untick one item; saved at once. */
+  async check(user: User, orderId: number, index: number, item: unknown, done: unknown): Promise<VisitTask> {
+    const v = await this.inService(user, orderId, index);
+    if (!isCheckItem(item) || !v.checklist.some((c) => c.item === item)) throw new BadRequestException({ code: 'BAD_ITEM', message: 'This item is not on the checklist' });
+    if (done === true) await this.db.pool.query('INSERT INTO visit_checks (order_id, idx, item) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [orderId, index, item]);
+    else await this.db.pool.query('DELETE FROM visit_checks WHERE order_id = $1 AND idx = $2 AND item = $3', [orderId, index, item]);
+    return this.visit(user, orderId, index);
+  }
+
+  /** R36-4: a photo is saved to the server as soon as it is taken; up to 9 per visit. */
+  async addPhoto(user: User, orderId: number, index: number, data: Buffer | undefined): Promise<VisitTask> {
+    const v = await this.inService(user, orderId, index);
+    if (!data) throw new BadRequestException({ code: 'PHOTO_MISSING', message: 'Choose a photo' });
+    const type = imageType(data);
+    if (type !== 'jpg' && type !== 'png') throw new BadRequestException({ code: 'PHOTO_TYPE', message: 'Use a JPEG or PNG photo' });
+    if (v.photos.length >= SERVICE_RULES.maxPhotos) throw new ConflictException({ code: 'TOO_MANY_PHOTOS', message: `Up to ${SERVICE_RULES.maxPhotos} photos per visit` });
+    const key = await this.files.save('visits', data, type);
+    await this.db.pool.query('INSERT INTO visit_photos (order_id, idx, file_key) VALUES ($1, $2, $3)', [orderId, index, key]);
+    return this.visit(user, orderId, index);
+  }
+
+  /** R36-4: the caregiver can delete a photo until the report is sent (E8-5). */
+  async deletePhoto(user: User, orderId: number, index: number, photoId: number): Promise<VisitTask> {
+    await this.inService(user, orderId, index);
+    const { rowCount } = await this.db.pool.query('DELETE FROM visit_photos WHERE id = $1 AND order_id = $2 AND idx = $3', [photoId, orderId, index]);
+    if (!rowCount) throw new NotFoundException({ code: 'PHOTO_NOT_FOUND', message: 'Photo not found' });
+    return this.visit(user, orderId, index);
+  }
+
+  /** R36-7: photos are private; here only the visit's caregiver (the owner sees them with the report in E9-1). */
+  async photo(user: User, orderId: number, index: number, photoId: number): Promise<{ data: Buffer; mime: string }> {
+    await this.visit(user, orderId, index);
+    const { rows } = await this.db.pool.query<{ file_key: string }>('SELECT file_key FROM visit_photos WHERE id = $1 AND order_id = $2 AND idx = $3', [photoId, orderId, index]);
+    if (!rows[0]) throw new NotFoundException({ code: 'PHOTO_NOT_FOUND', message: 'Photo not found' });
+    const ext = rows[0].file_key.split('.').pop() as 'jpg' | 'png';
+    return { data: await this.files.read(rows[0].file_key), mime: IMAGE_MIME[ext] };
   }
 
   /**

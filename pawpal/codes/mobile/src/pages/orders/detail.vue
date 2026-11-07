@@ -23,6 +23,9 @@
           <text class="note" data-test="visit-price">{{ v.quote.totalMinutes }} min · paid {{ formatRM(v.paidSen) }}</text>
           <text class="link">Details ›</text>
         </view>
+        <button v-if="canConfirm(i)" class="primary small" data-test="confirm-entry" :disabled="busy" @click.stop="confirm(i)">
+          Confirm {{ order.caregiver.displayName }} is in
+        </button>
       </view>
       <text class="note" data-test="order-pets">For {{ order.pets.map((p) => p.name).join(', ') }}</text>
     </view>
@@ -60,7 +63,7 @@ import { computed, ref } from 'vue';
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app';
 import { ENTRY_METHOD_LABEL, REQUEST_RULES, canRebook, formatRM, orderTag, payResult, refundLine, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
-import { getOrderDetail } from '@/api/booking';
+import { confirmEntry, getOrderDetail } from '@/api/booking';
 import HelpButton from '@/components/HelpButton.vue';
 import { copyText } from '@/copy';
 import { rebookWithConfirm, withdrawWithConfirm } from '@/order-actions';
@@ -114,6 +117,22 @@ async function withdraw() {
   busy.value = false;
 }
 
+/** R35-4 (KF hand test): the caregiver is at the door; confirm right here as well as on O14. */
+const canConfirm = (i: number) => order.value?.status === 'accepted' && order.value.entryMethod === 'live_confirm' && order.value.runs[i]?.status === 'arrived';
+
+async function confirm(i: number) {
+  error.value = '';
+  busy.value = true;
+  try {
+    order.value = await confirmEntry(id, i);
+  } catch (e) {
+    error.value = (e as Error).message;
+    await load();
+  } finally {
+    busy.value = false;
+  }
+}
+
 /** R32-1 */
 function openVisit(i: number) {
   uni.navigateTo({ url: `/pages/orders/visit?id=${id}&i=${i}` });
@@ -144,5 +163,7 @@ async function rebook() {
 .link { color: var(--pp-primary-strong); font-weight: 600; font-size: 26rpx; }
 .error { color: var(--pp-danger); font-size: 26rpx; text-align: center; }
 .primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
+.primary.small { margin-top: 12rpx; font-size: 28rpx; }
+.primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
 .danger-ghost { width: 100%; background: var(--pp-surface); color: var(--pp-danger); border: 1px solid var(--pp-danger); border-radius: var(--pp-radius-button); }
 </style>

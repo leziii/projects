@@ -66,7 +66,7 @@
     <view v-else-if="v.status === 'in_service'" class="card" data-test="in-service">
       <text class="strong">{{ arrivedText(v.arrivedAt!) }}</text>
       <text class="strong" data-test="entered-at">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
-      <text class="note">The service has started. The service report comes in E8-4.</text>
+      <button class="primary" data-test="continue-service" @click="openService">Continue service</button>
     </view>
     <text v-if="actionError" class="error" data-test="action-error">{{ actionError }}</text>
 
@@ -127,7 +127,12 @@ function startPoll() {
   stopPoll();
   timer = setInterval(() => {
     if (busy.value || !v.value) return;
-    if (v.value.status === 'arrived' && v.value.entryMethod === 'live_confirm') void load();
+    if (v.value.status === 'arrived' && v.value.entryMethod === 'live_confirm') {
+      // R36-1: the owner let them in, so the service page opens.
+      void load().then(() => {
+        if (v.value?.status === 'in_service') openService();
+      });
+    }
     else now.value = new Date();
   }, POLL_MS);
 }
@@ -152,8 +157,15 @@ async function act(run: () => Promise<VisitTask>) {
 
 /** R35-2 */
 const arrive = () => act(() => arriveVisit(id, index));
-/** R35-3 */
-const enter = () => act(() => enterVisit(id, index));
+/** R35-3, R36-1: once in, the service page opens. */
+async function enter() {
+  await act(() => enterVisit(id, index));
+  if (v.value?.status === 'in_service') openService();
+}
+
+function openService() {
+  uni.navigateTo({ url: `/pages/caregiver/service?id=${id}&i=${index}` });
+}
 
 onLoad((q) => {
   id = Number(q?.id) || 0;
