@@ -167,6 +167,15 @@ export class MessagesService {
       if (!rows[0]) return gone;
       return { ...link, status: rows[0].open ? 'open' : 'closed', summary: `Request ${rows[0].number}: ${rows[0].open ? 'Waiting for you' : 'No longer open'}`, gone: false };
     }
+    if (link.type === 'report') {
+      // E9-1 (R39-1): one visit's report, by its run id.
+      const { rows } = await this.db.pool.query<{ order_id: string; idx: number; status: string; number: string }>(
+        'SELECT r.order_id, r.idx, r.status, o.number FROM visit_runs r JOIN orders o ON o.id = r.order_id WHERE r.id = $1',
+        [link.id],
+      );
+      if (!rows[0]) return gone;
+      return { ...link, status: rows[0].status, summary: `Order ${rows[0].number}: report for visit ${rows[0].idx + 1}`, gone: false };
+    }
     if (link.type === 'order') {
       const { rows } = await this.db.pool.query<{ number: string; status: OrderStatus }>('SELECT number, status FROM orders WHERE id = $1', [link.id]);
       if (!rows[0]) return gone;

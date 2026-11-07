@@ -10,9 +10,9 @@ import { RuleError } from './rules';
 export type MessageCategory = 'order' | 'refund' | 'dispute' | 'account';
 export const MESSAGE_CATEGORIES: readonly MessageCategory[] = ['order', 'refund', 'dispute', 'account'];
 
-/** What a message can point to. Orders, visits and reports join in later stories. */
-export type MessageLinkType = 'caregiver_application' | 'payment' | 'pet' | 'order' | 'request';
-export const MESSAGE_LINK_TYPES: readonly MessageLinkType[] = ['caregiver_application', 'payment', 'pet', 'order', 'request'];
+/** What a message can point to. E9-1: "report" points to one visit's report by its run id. */
+export type MessageLinkType = 'caregiver_application' | 'payment' | 'pet' | 'order' | 'request' | 'report';
+export const MESSAGE_LINK_TYPES: readonly MessageLinkType[] = ['caregiver_application', 'payment', 'pet', 'order', 'request', 'report'];
 
 export const MESSAGE_LIMITS = { titleMax: 60, bodyMax: 300, pageSize: 50 } as const;
 

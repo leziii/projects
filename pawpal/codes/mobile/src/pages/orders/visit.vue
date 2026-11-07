@@ -12,6 +12,7 @@
       <text class="section">Time</text>
       <view class="row"><text class="note">Planned</text><text data-test="visit-planned">{{ plannedTime(visit) }}</text></view>
       <view class="row"><text class="note">Actual</text><text :class="{ later: !run.arrivedAt }" data-test="visit-actual">{{ run.arrivedAt ? arrivedText(run.arrivedAt) : AFTER_VISIT }}</text></view>
+      <text v-if="run.locationRecorded" class="note" data-test="location-recorded">📍 Location recorded</text>
       <view class="row"><text class="note">Caregiver</text><text data-test="visit-caregiver">{{ order.caregiver.displayName }}</text></view>
     </view>
 
@@ -28,7 +29,11 @@
 
     <view class="card">
       <text class="section">Report</text>
-      <text class="later" data-test="visit-report">{{ AFTER_VISIT }}</text>
+      <template v-if="run.reportedAt">
+        <text class="strong" data-test="visit-report">{{ reportLine }}</text>
+        <button class="primary" data-test="view-report" @click="viewReport">View report</button>
+      </template>
+      <text v-else class="later" data-test="visit-report">{{ AFTER_VISIT }}</text>
     </view>
 
     <view class="card">
@@ -53,10 +58,12 @@ import {
   ENTRY_METHOD_LABEL,
   NOT_STARTED,
   arrivedText,
+  confirmedText,
   enteredText,
   formatRM,
   payResult,
   plannedTime,
+  reportReadyText,
   serviceText,
   visitPriceLines,
   visitStatus,
@@ -87,6 +94,16 @@ async function load() {
     error.value = (e as Error).message;
   }
 }
+
+/** R39-1, R40-1 … R40-3 */
+const reportLine = computed(() => {
+  const r = run.value;
+  if (r.status === 'confirmed') return confirmedText(r.confirmedAt!, r.confirmedBy!, 'owner');
+  if (r.status === 'disputed') return 'Under review: you raised a problem';
+  return reportReadyText(r.reportedAt!, new Date());
+});
+
+const viewReport = () => uni.navigateTo({ url: `/pages/orders/report?id=${id}&i=${index}` });
 
 async function confirm() {
   busy.value = true;

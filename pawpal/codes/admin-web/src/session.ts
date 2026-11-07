@@ -8,7 +8,7 @@ export const setAdminToken = (token: string) => globalThis.localStorage?.setItem
 export const clearAdminToken = () => globalThis.localStorage?.removeItem(TOKEN_KEY);
 
 /** Pages in menu order, each with its path; only those this admin may open. */
-export const PAGE_PATH: Record<AdminPage, string> = { dashboard: '/', caregivers: '/caregivers', pets: '/pets', rules: '/rules', promos: '/promos', payments: '/payments', 'test-tools': '/test-tools' };
+export const PAGE_PATH: Record<AdminPage, string> = { dashboard: '/', caregivers: '/caregivers', pets: '/pets', rules: '/rules', promos: '/promos', payments: '/payments', locations: '/locations', cases: '/cases', reviews: '/reviews', 'test-tools': '/test-tools' };
 
 export const menuFor = (admin: Pick<AdminUser, 'pages'>) =>
   ADMIN_PAGES.filter((p) => canSeePage(admin, p)).map((p) => ({ page: p, path: PAGE_PATH[p], label: ADMIN_PAGE_LABEL[p] }));

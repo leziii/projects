@@ -93,7 +93,8 @@ function open(t: Task) {
 .center { text-align: center; padding: 48rpx 0; }
 .tag { padding: 4rpx 16rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 600; background: var(--pp-background); color: var(--pp-primary-strong); }
 .tag.cancelled { color: var(--pp-danger); }
-.tag.arrived, .tag.in_service { background: var(--pp-primary-strong); color: var(--pp-surface); }
+.tag.disputed { background: var(--pp-danger); color: var(--pp-surface); }
+.tag.arrived, .tag.in_service, .tag.report_sent, .tag.confirmed { background: var(--pp-primary-strong); color: var(--pp-surface); }
 .link { color: var(--pp-primary-strong); font-weight: 600; }
 .gap { align-self: center; font-size: 24rpx; color: var(--pp-muted); }
 .gap.tight { color: var(--pp-danger); font-weight: 600; }

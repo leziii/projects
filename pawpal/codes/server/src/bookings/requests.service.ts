@@ -1,10 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   REQUEST_RULES,
+  LOCATION_NOTICE,
+  checkLocation,
+  geoPointOf,
+  type LocationFlagRow,
+  type LocationMoment,
   SERVICE_RULES,
-  checklistFor,
+  REPORT_RULES,
+  confirmByText,
+  reportProblems,
   isCheckItem,
-  type CheckItem,
   firstVisitOf,
   NOT_STARTED,
   arriveFromText,
@@ -32,6 +38,7 @@ import {
   type VisitTask,
   type User,
 } from '@pawpal/shared';
+import type { PoolClient } from 'pg';
 import { AddressesService } from '../addresses/addresses.service';
 import { DbService, ts } from '../db/db.service';
 import { FileStore, IMAGE_MIME, imageType } from '../files/file-store';
@@ -190,23 +197,81 @@ export class RequestsService {
       entryMethod: o.entry_method,
       entry,
       entryFrom: entryFromOf(task),
-      ...(await this.service(Number(o.id), index, o.pets)),
+      ...(await this.runs.service(Number(o.id), index, o.pets)),
+      locationNotice: LOCATION_NOTICE,
     };
-  }
-
-  /** E8-4 (R36-3, R36-4): the checklist with its ticks, and the photo ids. */
-  private async service(orderId: number, index: number, pets: { kind: PetKind }[]): Promise<Pick<VisitTask, 'checklist' | 'photos'>> {
-    const done = await this.db.pool.query<{ item: CheckItem }>('SELECT item FROM visit_checks WHERE order_id = $1 AND idx = $2', [orderId, index]);
-    const photos = await this.db.pool.query<{ id: string }>('SELECT id FROM visit_photos WHERE order_id = $1 AND idx = $2 ORDER BY id', [orderId, index]);
-    const ticked = new Set(done.rows.map((r) => r.item));
-    return { checklist: checklistFor(pets).map((item) => ({ item, done: ticked.has(item) })), photos: photos.rows.map((r) => Number(r.id)) };
   }
 
   /** This caregiver's visit, which must be in service (R36-1). */
   private async inService(user: User, orderId: number, index: number): Promise<VisitTask> {
     const v = await this.visit(user, orderId, index);
+    // R37-5: once sent, the report is locked.
+    if (v.status === 'report_sent') throw new ConflictException({ code: 'REPORT_LOCKED', message: 'The report is sent and locked. Contact support to change it' });
     if (v.status !== 'in_service') throw new ConflictException({ code: 'NOT_IN_SERVICE', message: 'The service has not started' });
     return v;
+  }
+
+  /** R38-1 … R38-4: the caregiver's location at this moment, its distance from home, and any flag for admin. */
+  private async saveLocation(client: PoolClient, user: User, orderId: number, index: number, moment: LocationMoment, location: unknown): Promise<void> {
+    const here = geoPointOf(location);
+    const addressId = (await client.query<{ address_id: number }>('SELECT address_id FROM orders WHERE id = $1', [orderId])).rows[0].address_id;
+    const { distanceM, flag } = checkLocation(await this.addresses.homeOf(addressId), here);
+    await client.query(
+      'INSERT INTO location_checks (order_id, idx, moment, caregiver_id, lat, lng, distance_m, flag) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [orderId, index, moment, user.id, here?.lat ?? null, here?.lng ?? null, distanceM, flag],
+    );
+  }
+
+  /** R38-4: admin's Location flags list, newest first. */
+  async locationFlags(): Promise<LocationFlagRow[]> {
+    const { rows } = await this.db.pool.query<{ id: string; order_id: string; number: string; idx: number; moment: LocationMoment; flag: LocationFlagRow['flag']; distance_m: number | null; caregiver: string; at: string }>(
+      `SELECT l.id, l.order_id, o.number, l.idx, l.moment, l.flag, l.distance_m, c.display_name AS caregiver, ${ts('l.created_at')} AS at
+       FROM location_checks l JOIN orders o ON o.id = l.order_id JOIN caregiver_profiles c ON c.user_id = l.caregiver_id
+       WHERE l.flag IS NOT NULL ORDER BY l.id DESC LIMIT 200`,
+    );
+    return rows.map((r) => ({ id: Number(r.id), orderId: Number(r.order_id), number: r.number, visit: r.idx + 1, moment: r.moment, flag: r.flag, distanceM: r.distance_m, caregiver: r.caregiver, at: r.at }));
+  }
+
+  /** R37-2: the note is saved as a draft while the caregiver types. */
+  async saveNote(user: User, orderId: number, index: number, note: unknown): Promise<VisitTask> {
+    await this.inService(user, orderId, index);
+    const text = typeof note === 'string' ? note : '';
+    if (text.length > REPORT_RULES.noteMax) throw new BadRequestException({ code: 'NOTE_TOO_LONG', message: `Keep the note under ${REPORT_RULES.noteMax} characters` });
+    await this.db.pool.query('UPDATE visit_runs SET note = $3, updated_at = now() WHERE order_id = $1 AND idx = $2', [orderId, index, text]);
+    return this.visit(user, orderId, index);
+  }
+
+  /**
+   * R37-1, R37-4: send the report. Needs 3 photos and a note for any unticked item; the owner's 12 h starts now
+   * and the owner is told.
+   */
+  async sendReport(user: User, orderId: number, index: number, location: unknown = null): Promise<VisitTask> {
+    const v = await this.inService(user, orderId, index);
+    const problems = reportProblems(v);
+    if (problems.length) throw new ConflictException({ code: 'REPORT_INCOMPLETE', message: problems[0], problems });
+    await this.db.tx(async (client) => {
+      const { rows } = await client.query<{ id: string; reported: string }>(
+        `UPDATE visit_runs SET status = 'report_sent', reported_at = now(), updated_at = now() WHERE order_id = $1 AND idx = $2 AND status = 'in_service' RETURNING id, ${ts('reported_at')} AS reported`,
+        [orderId, index],
+      );
+      if (!rows[0]) throw new ConflictException({ code: 'REPORT_LOCKED', message: 'The report is sent and locked. Contact support to change it' });
+      await this.saveLocation(client, user, orderId, index, 'report', location);
+      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: 'report_sent', actor: { type: 'caregiver', id: String(user.id) }, reason: `Report sent for visit ${index + 1} (${v.photos.length} photos)` });
+      const o = await client.query<{ owner_id: number; display_name: string }>(
+        'SELECT o.owner_id, c.display_name FROM orders o JOIN caregiver_profiles c ON c.user_id = o.caregiver_id WHERE o.id = $1',
+        [orderId],
+      );
+      await this.messages.send(client, {
+        userId: o.rows[0].owner_id,
+        role: 'owner',
+        category: 'order',
+        title: `Report for visit ${index + 1} is ready`,
+        body: `Order ${v.number}: ${shortName(o.rows[0].display_name)} sent the report for ${v.date} ${taskTime(v)}. Please check it by ${confirmByText(rows[0].reported)}.`,
+        // R39-1: straight to the report.
+        link: { type: 'report', id: Number(rows[0].id) },
+      });
+    });
+    return this.visit(user, orderId, index);
   }
 
   /** R36-3: tick or untick one item; saved at once. */
@@ -238,20 +303,19 @@ export class RequestsService {
     return this.visit(user, orderId, index);
   }
 
-  /** R36-7: photos are private; here only the visit's caregiver (the owner sees them with the report in E9-1). */
+  /** R36-7: photos are private; here only the visit's caregiver (the owner sees them with the report, E9-1). */
   async photo(user: User, orderId: number, index: number, photoId: number): Promise<{ data: Buffer; mime: string }> {
     await this.visit(user, orderId, index);
-    const { rows } = await this.db.pool.query<{ file_key: string }>('SELECT file_key FROM visit_photos WHERE id = $1 AND order_id = $2 AND idx = $3', [photoId, orderId, index]);
-    if (!rows[0]) throw new NotFoundException({ code: 'PHOTO_NOT_FOUND', message: 'Photo not found' });
-    const ext = rows[0].file_key.split('.').pop() as 'jpg' | 'png';
-    return { data: await this.files.read(rows[0].file_key), mime: IMAGE_MIME[ext] };
+    const key = await this.runs.photoKey(orderId, index, photoId);
+    if (!key) throw new NotFoundException({ code: 'PHOTO_NOT_FOUND', message: 'Photo not found' });
+    return { data: await this.files.read(key), mime: IMAGE_MIME[key.split('.').pop() as 'jpg' | 'png'] };
   }
 
   /**
    * E8-3 "I've arrived" (R35-2, R35-4): from 30 min before the start; records the time, never starts the service clock.
    * With Live confirm the owner is asked to let the caregiver in.
    */
-  async arrive(user: User, orderId: number, index: number, now = new Date()): Promise<VisitTask> {
+  async arrive(user: User, orderId: number, index: number, location: unknown = null, now = new Date()): Promise<VisitTask> {
     const v = await this.visit(user, orderId, index, now);
     if (!canArrive(v, now)) {
       throw new ConflictException({ code: 'CANNOT_ARRIVE', message: v.status === 'todo' ? `You can tap this ${arriveFromText(v).toLowerCase()}` : 'Arrival is already recorded' });
@@ -259,6 +323,7 @@ export class RequestsService {
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query("INSERT INTO visit_runs (order_id, idx, status, arrived_at) VALUES ($1, $2, 'arrived', now()) ON CONFLICT DO NOTHING", [orderId, index]);
       if (!rowCount) throw new ConflictException({ code: 'CANNOT_ARRIVE', message: 'Arrival is already recorded' });
+      await this.saveLocation(client, user, orderId, index, 'arrive', location);
       await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'todo', to: 'arrived', actor: { type: 'caregiver', id: String(user.id) }, reason: `Arrived for visit ${index + 1} (${v.date} ${taskTime(v)})` });
       if (v.entryMethod === 'live_confirm') {
         const { rows } = await client.query<{ owner_id: number; display_name: string }>(

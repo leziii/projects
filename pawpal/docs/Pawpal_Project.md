@@ -211,6 +211,11 @@ flowchart LR
 | Visit (S09) | From S08; time, status, service, number + copy, income; pets with health note; entry method always, instructions 2 h before to end (logged, not when cancelled); address + contact with Call; start button placeholder until E8-3 | Built (E8-2) |
 | Confirm entry (S10, O14) | Visit status To do → Arrived → In service; Arrived from 30 min before (no clock); Pre-authorised: tick + Confirm entry; Live confirm: owner confirms on O14 after an arrival message; O14 shows arrived/entered times and who confirmed; Test tool moves a visit to start in 10 min | Built (E8-3) |
 | Record service (S11) | Opens after entry; served time vs minimum; checklist from pets (feed, water, litter for cats, walk for dogs) saved per tick; up to 9 photos saved at once, deletable; finish under minimum asks first; overtime and problem buttons later | Built (E8-4) |
+| Submit report (S12) | 3+ photos; unticked items need a note; note ≤ 500 saved as draft; failed upload blocks Send, no clock; Send → Report sent, owner confirms within 12 h, owner told; report locked after; back to S09 | Built (E8-5) |
+| Location check (S10, S12, O05, O14, admin) | Location at arrive and send only; owner sets home position on O05; > 500 m, not shared, or no home position listed on admin Location flags; never blocks; owner sees times + Location recorded | Built (E8-6) |
+| Report view (O17, O13, O14) | Owner opens O17 from the message or "View report" on O14; photos, checklist, note, sent time, deadline; read only until E9-2 | Built (E9-1) |
+| Confirm or dispute (O17, O18, admin) | Confirm with popup or auto after 12 h → Confirmed; Raise a problem (type, description, ≤ 3 photos) → case, clock stops, Under review, whole-order payout held; only before confirmed; admin case list | Built (E9-2) |
+| Reviews (O21, O08, O07, S07, admin) | After all visits confirmed, within 14 days; 1–5 stars + comment ≤ 300; no edits; O08 average + 5 newest; O07 short rating or New; caregiver replies once; admin hides with reason; not linked to money | Built (E9-3) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -302,6 +307,11 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E8-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (past visits say "Hidden: the visit time has passed"; order numbers may pass 999 a day) | 4 Nov 2026 |
 | E8-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 4 Nov 2026 |
 | E8-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (owner can also confirm entry on O13) | 4 Nov 2026 |
+| E8-5 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (failed photo stays in the row with ↻ on S11 and S12) | 4 Nov 2026 |
+| E8-6 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (address shown beside the 📍 home position; address form lists everything still to fill in; flag list checked by automated test only) | 5 Nov 2026 |
+| E9-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 6 Nov 2026 |
+| E9-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (pick several photos at once; Raise a problem is red; auto-confirm checked by automated test and screenshots) | 6 Nov 2026 |
+| E9-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots, KF approved) | 7 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -833,3 +843,57 @@ All business rules are decided. Only these remain:
 | R36-5 | Finish | "Finish, write report"; under the minimum a box asks "You have served 23 of 45 min. Finish anyway?"; opens S12 (placeholder until E8-5) |
 | R36-6 | Other buttons | "Request overtime" and "Report a problem" greyed "Coming later" (E11, S13) |
 | R36-7 | Owner | Nothing new until the report (E9-1); photos private to owner, caregiver and admins |
+
+### Round 37 · 4 Nov 2026 · KF decision (E8-5 submit report)
+| # | Question | Decision |
+|---|---|---|
+| R37-1 | Needed to send | At least 3 photos; an unticked checklist item is allowed only with a note |
+| R37-2 | Note | Optional, up to 500 characters; saved as a draft on the server while typing |
+| R37-3 | Upload failure | A failed photo shows "Upload failed ↻" to retry; Send is disabled while a photo is failed or uploading; nothing sent, no 12 h clock |
+| R37-4 | On send | Visit becomes Report sent; caregiver sees "Sent 9:51 am · owner confirms by 9:51 pm" (12 h); owner gets "Report for visit … is ready" |
+| R37-5 | After sending | Report locked (photos, ticks, note); fixes through support (WhatsApp) |
+| R37-6 | Where it lands | Back on S09 with sent time and deadline; My tasks shows "Report sent" |
+| R37-7 | Owner side | Report view and 12 h auto-confirm in E9-1 / E9-2; until then O14 shows "Report sent, review comes soon" |
+
+### Round 38 · 4 Nov 2026 · KF decision (E8-6 location check)
+| # | Question | Decision |
+|---|---|---|
+| R38-1 | When | Caregiver location taken only at "I've arrived" and at "Send report"; nothing in between (R7-2) |
+| R38-2 | Home position | Owner taps "Use my current location" on the address form while at home (no paid map service); without it the location is still saved but distance is not checked, admin sees "No home position" |
+| R38-3 | Refused or off | Caregiver can continue; saved as "Location not shared" and flagged to admin |
+| R38-4 | Admin | "Location flags" list: order, visit, moment, distance or reason, time; more than 500 m flagged; never blocks |
+| R38-5 | Owner | Sees times only (Arrived, Entered, Report sent) and "📍 Location recorded"; never distances or flags |
+| R38-6 | Caregiver notice | "Your location is saved only now and when you send the report." under both buttons |
+| R38-7 | KF hand test | Home position card shows "📍 {typed address}" and "Check it on the map ›"; address form shows "To save, please fill in:" with every missing field |
+
+### Round 39 · 5 Nov 2026 · KF decision (E9-1 owner reads the report)
+| # | Question | Decision |
+|---|---|---|
+| R39-1 | Way in | "Report for visit N is ready" message and a "View report" button on O14; O13 visit row shows "Report ready · check by 9:51 pm" |
+| R39-2 | What O17 shows | Photos (tap for full size), checklist with ✓ or ✗ and the reason, caregiver's note, sent time, "Please check by 9:51 pm" |
+| R39-3 | Buttons | Read only in E9-1; Confirm, Raise a problem and the 12 h auto-confirm come in E9-2 |
+| R39-4 | Privacy | Only the order's owner, its caregiver and admins can open the report and photos |
+| R39-5 | Caregiver | No change; S09 keeps "Report sent" with the deadline |
+
+### Round 40 · 6 Nov 2026 · KF decision (E9-2 confirm or dispute)
+| # | Question | Decision |
+|---|---|---|
+| R40-1 | Confirm | "Confirm, all good" on O17 with an OK popup; visit becomes Confirmed for both sides; cannot be undone |
+| R40-2 | Auto-confirm | 12 h after the report is sent with no action, the visit confirms itself; the caregiver is told either way |
+| R40-3 | Raise a problem | O18: type (Report problem, Late, Couldn't get in, Other), description required (≤ 500), up to 3 optional photos; makes a case, stops the 12 h clock, visit shows "Under review" |
+| R40-4 | While a case is open | Whole-order payout on hold; other visits still go ahead; admin sees a simple case list now, handling in E12-5 |
+| R40-5 | Window | Only before the visit is confirmed (within the 12 h); after that, Help (WhatsApp) |
+| R40-6 | Owner follow-up | O18 shows the case: "Sent", then "Under review"; decisions come with E12 |
+| R40-7 | KF hand test | S11/S12 "+ Photo" picks several photos at once (up to 9); "Raise a problem" button is red |
+
+### Round 41 · 6 Nov 2026 · KF decision (E9-3 reviews)
+| # | Question | Decision |
+|---|---|---|
+| R41-1 | When | Once every visit of the order is Confirmed; O13 shows "Rate {name}"; any visit Under review → wait |
+| R41-2 | What | 1–5 stars (required) + optional comment ≤ 300; cannot be edited after sending |
+| R41-3 | Time limit | Up to 14 days after the last visit is confirmed; then the button goes |
+| R41-4 | Where shown | O08: "★ 4.8 (12 reviews)" + 5 newest comments with owner short name ("Tan M.") and month; O07 list: "★ 4.8 (12)" or "New" |
+| R41-5 | Caregiver reply | Caregiver gets a message; may reply once (≤ 300), shown under the review |
+| R41-6 | Admin | "Reviews" page lists all; Hide with a reason removes it from profile and average; every hide logged |
+| R41-7 | Money | Not linked to payout; does not replace Confirm |
+| R41-8 | Card payment (KF, same day) | PawPal never collects card numbers; the real gateway's own page does (E15). Test page gets a fake card form after E9-3 |

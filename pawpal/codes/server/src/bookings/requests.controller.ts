@@ -2,7 +2,8 @@ import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { SERVICE_RULES, type RequestDetail, type RequestList, type TaskList, type User, type VisitTask } from '@pawpal/shared';
+import { SERVICE_RULES, type LocationFlagRow, type RequestDetail, type RequestList, type TaskList, type User, type VisitTask } from '@pawpal/shared';
+import { AdminGuard, ForPage } from '../admin/admin.guard';
 import { AuthGuard, CurrentUser, NeedsRole } from '../auth/auth.guard';
 import { OrdersService } from './orders.service';
 import { RequestsService, type CaregiverHome, type PausedInfo } from './requests.service';
@@ -40,8 +41,8 @@ export class RequestsController {
   @Post('caregiver/tasks/:orderId/:i/arrive')
   @HttpCode(200)
   @NeedsRole('caregiver')
-  arrive(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number): Promise<VisitTask> {
-    return this.requests.arrive(user, orderId, i);
+  arrive(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { location?: unknown }): Promise<VisitTask> {
+    return this.requests.arrive(user, orderId, i, body?.location ?? null);
   }
 
   /** E8-3 Pre-authorised: the caregiver confirms entry (R35-3). */
@@ -58,6 +59,22 @@ export class RequestsController {
   @NeedsRole('caregiver')
   check(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { item?: unknown; done?: unknown }): Promise<VisitTask> {
     return this.requests.check(user, orderId, i, body?.item, body?.done);
+  }
+
+  /** E8-5 S12: the note draft (R37-2). */
+  @Post('caregiver/tasks/:orderId/:i/note')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  note(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { note?: unknown }): Promise<VisitTask> {
+    return this.requests.saveNote(user, orderId, i, body?.note);
+  }
+
+  /** E8-5 S12: send the report; the owner's 12 h starts (R37-1, R37-4). */
+  @Post('caregiver/tasks/:orderId/:i/report')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  report(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { location?: unknown }): Promise<VisitTask> {
+    return this.requests.sendReport(user, orderId, i, body?.location ?? null);
   }
 
   /** E8-4 S11: multipart field "photo", a JPEG or PNG up to 10 MB (R36-4). */
@@ -156,5 +173,18 @@ export class RequestsDevController {
   visitSoon(@Body() body: { number?: unknown; index?: unknown }): Promise<{ number: string; date: string; start: number }> {
     if (this.config.get('NODE_ENV') === 'production' || this.config.get('DEV_TOOLS') === 'off') throw new NotFoundException();
     return this.requests.visitSoon(body?.number, body?.index ?? 0);
+  }
+}
+
+/** E8-6 admin: visits whose location was far, not shared, or had no home position (R38-4). */
+@Controller('admin/location-flags')
+export class LocationFlagsController {
+  constructor(private readonly requests: RequestsService) {}
+
+  @Get()
+  @UseGuards(AdminGuard)
+  @ForPage('locations')
+  list(): Promise<LocationFlagRow[]> {
+    return this.requests.locationFlags();
   }
 }

@@ -5,7 +5,7 @@
       <view class="head">
         <view class="avatar"><text>{{ o.card.initials }}</text></view>
         <view class="who">
-          <text class="name">{{ o.card.displayName }}</text>
+          <view class="name-row"><text class="name">{{ o.card.displayName }}</text><text class="rating" data-test="rating">{{ ratingShort(o.card.rating) }}</text></view>
           <text class="muted">{{ cardRows(o.card)[0].value }} · {{ cardRows(o.card)[1].value }}</text>
         </view>
         <text class="more">›</text>
@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
-import type { CaregiverOption } from '@pawpal/shared';
+import { ratingShort, type CaregiverOption } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { listCaregivers } from '@/api/booking';
 import { badges, cardRows } from '@/trust';
@@ -69,6 +69,8 @@ function back() {
 .avatar { width: 88rpx; height: 88rpx; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--pp-background); color: var(--pp-primary-strong); font-weight: 700; font-size: 32rpx; }
 .who { flex: 1; display: flex; flex-direction: column; }
 .name { font-weight: 700; font-size: 30rpx; }
+.name-row { display: flex; justify-content: space-between; align-items: center; gap: 16rpx; }
+.rating { font-size: 26rpx; font-weight: 600; color: var(--pp-ink); }
 .more { color: var(--pp-muted); font-size: 40rpx; }
 .badges { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .badge { padding: 4rpx 14rpx; border-radius: 999rpx; background: var(--pp-primary-strong); color: var(--pp-surface); font-size: 22rpx; font-weight: 600; }

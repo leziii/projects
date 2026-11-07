@@ -15,7 +15,7 @@ const card: CaregiverCard = {
   intro: '',
   idVerified: true,
   certChecked: false,
-  insurance: null,
+  insurance: null, rating: { avg: null, count: 0 },
 };
 
 describe('caregiver card (E4-6, O08)', () => {

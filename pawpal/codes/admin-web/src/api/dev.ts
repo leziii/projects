@@ -64,5 +64,9 @@ export const markOrderSettled = (number: string, f?: typeof fetch) =>
 export const expireRequest = (number: string, f?: typeof fetch) => api<{ number: string }>('/dev/request-expire', { number: number.trim().toUpperCase() }, f);
 
 /** R35-7: one visit of an accepted order starts in 10 minutes, so "I've arrived" can be tested now (E8-3). */
+/** R40-2: make a sent report 12 h old, then run the auto-confirm. */
+export const reportDue = (number: string, visit: number, f?: typeof fetch) =>
+  api<{ number: string; confirmed: number }>('/dev/report-due', { number: number.trim().toUpperCase(), index: visit - 1 }, f);
+
 export const visitSoon = (number: string, visit: number, f?: typeof fetch) =>
   api<{ number: string; date: string; start: number }>('/dev/visit-soon', { number: number.trim().toUpperCase(), index: visit - 1 }, f);

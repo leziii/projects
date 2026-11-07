@@ -38,15 +38,27 @@ test('service page: timer, checklist saved per tick, photos added and deleted, f
 
   // R36-4: photos are saved straight away and can be deleted.
   await expect(page.locator('[data-test=photo-count]')).toHaveText('0 of 9 photos');
-  for (const n of [1, 2]) {
-    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('[data-test=photo-add]').click()]);
-    await chooser.setFiles({ name: `p${n}.png`, mimeType: 'image/png', buffer: PNG });
-    await expect(page.locator('[data-test=photo-count]')).toHaveText(`${n} of 9 photos`);
-  }
+  // KF hand test (E9-2): several photos chosen at once.
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('[data-test=photo-add]').click()]);
+  expect(chooser.isMultiple()).toBe(true);
+  await chooser.setFiles([1, 2].map((n) => ({ name: `p${n}.png`, mimeType: 'image/png', buffer: PNG })));
+  await expect(page.locator('[data-test=photo-count]')).toHaveText('2 of 9 photos');
   await expect(page.locator('[data-test=photo] img')).toHaveCount(2);
   await page.locator('[data-test=photo-delete]').first().click();
   await page.locator('.uni-modal__btn_primary').click();
   await expect(page.locator('[data-test=photo-count]')).toHaveText('1 of 9 photos');
+
+  // KF hand test: a failed upload stays in the row with ↻ here too, and holds Finish until it is sorted.
+  await page.route('**/caregiver/tasks/*/0/photos', (route) => route.abort());
+  const [again] = await Promise.all([page.waitForEvent('filechooser'), page.locator('[data-test=photo-add]').click()]);
+  await again.setFiles({ name: 'p3.png', mimeType: 'image/png', buffer: PNG });
+  await expect(page.locator('[data-test=pending-failed]')).toBeVisible();
+  await expect(page.locator('[data-test=finish]')).toHaveAttribute('disabled', 'true');
+  await expect(page.locator('[data-test=finish-wait]')).toHaveText('A photo failed to upload. Tap ↻ to try again, or remove it');
+  await page.unroute('**/caregiver/tasks/*/0/photos');
+  await page.locator('[data-test=retry]').click();
+  await expect(page.locator('[data-test=photo-count]')).toHaveText('2 of 9 photos');
+  await expect(page.locator('[data-test=finish-wait]')).toHaveCount(0);
 
   // R36-6: later buttons are greyed.
   await expect(page.locator('[data-test=overtime]')).toHaveAttribute('disabled', 'true');
@@ -60,5 +72,5 @@ test('service page: timer, checklist saved per tick, photos added and deleted, f
   await page.locator('[data-test=finish]').click();
   await page.locator('.uni-modal__btn_primary').click();
   await expect(page).toHaveURL(new RegExp(`pages/caregiver/report\\?id=${order.id}&i=0`));
-  await expect(page.locator('[data-test=report-later]')).toContainText('E8-5');
+  await expect(page.locator('[data-test=send]')).toHaveAttribute('disabled', 'true');
 });

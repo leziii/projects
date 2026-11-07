@@ -31,15 +31,7 @@
         <text class="section">Photos</text>
         <text class="note" data-test="photo-count">{{ photoCountText(v.photos.length) }}</text>
       </view>
-      <view class="photos">
-        <view v-for="pid in v.photos" :key="pid" class="photo" data-test="photo">
-          <image v-if="urls[pid]" :src="urls[pid]" mode="aspectFill" class="img" />
-          <text class="remove" data-test="photo-delete" @click="remove(pid)">✕</text>
-        </view>
-        <view v-if="v.photos.length < SERVICE_RULES.maxPhotos" class="photo add" data-test="photo-add" @click="pick">
-          <text>{{ uploading ? '…' : '+ Photo' }}</text>
-        </view>
-      </view>
+      <VisitPhotos :order-id="id" :index="index" :photos="v.photos" @changed="show" @state="photoState = $event" @error="actionError = $event" />
       <text class="note">At least {{ SERVICE_RULES.minPhotos }} photos are needed for the report.</text>
     </view>
 
@@ -51,7 +43,8 @@
     </view>
     <text class="note center" data-test="later-note">Coming later</text>
 
-    <button class="primary" data-test="finish" :disabled="busy || uploading" @click="finish">Finish, write report</button>
+    <text v-if="photoState !== 'none'" class="note center" data-test="finish-wait">{{ photoState === 'failed' ? 'A photo failed to upload. Tap ↻ to try again, or remove it' : 'Waiting for photos to upload' }}</text>
+    <button class="primary" data-test="finish" :disabled="busy || photoState !== 'none'" @click="finish">Finish, write report</button>
   </view>
   <view v-else-if="error" class="content">
     <text class="error" data-test="error">{{ error }}</text>
@@ -59,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import {
   CHECK_LABEL,
@@ -77,19 +70,18 @@ import {
   type VisitTask,
 } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
-import { checkItem, deleteVisitPhoto, getVisit, uploadVisitPhoto, visitPhotoUrl } from '@/api/requests';
+import { checkItem, getVisit } from '@/api/requests';
+import VisitPhotos from '@/components/VisitPhotos.vue';
 import { confirmBox } from '@/order-actions';
-import { shrinkPhoto } from '@/photo-shrink';
 
 const v = ref<VisitTask | null>(null);
 const error = ref('');
 const actionError = ref('');
 const busy = ref(false);
-const uploading = ref(false);
+const photoState = ref<'none' | 'uploading' | 'failed'>('none');
 const now = ref(new Date());
-const urls = reactive<Record<number, string>>({});
-let id = 0;
-let index = 0;
+const id = ref(0);
+const index = ref(0);
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** R36-2: from the entry time, updated every minute. */
@@ -99,15 +91,12 @@ const clockOf = (at: string) => timeText(Number(at.slice(11, 13)) * 60 + Number(
 function show(next: VisitTask) {
   v.value = next;
   now.value = new Date();
-  for (const p of next.photos) {
-    if (!urls[p]) visitPhotoUrl(id, index, p).then((u) => (urls[p] = u)).catch(() => undefined);
-  }
 }
 
 async function load() {
   try {
-    show(await getVisit(id, index));
-    if (v.value!.status !== 'in_service') uni.redirectTo({ url: `/pages/caregiver/visit?id=${id}&i=${index}` });
+    show(await getVisit(id.value, index.value));
+    if (v.value!.status !== 'in_service') uni.redirectTo({ url: `/pages/caregiver/visit?id=${id.value}&i=${index.value}` });
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -123,39 +112,21 @@ async function act(run: () => Promise<VisitTask>) {
 }
 
 /** R36-3: saved at once. */
-const toggle = (item: CheckItem, done: boolean) => act(() => checkItem(id, index, item, done));
-
-function pick() {
-  if (uploading.value) return;
-  uni.chooseImage({ count: 1, sourceType: ['camera', 'album'], success: (res) => upload((res.tempFiles as File[])[0]) });
-}
-
-/** R36-4: shrunk on the phone, then saved to the server straight away. */
-async function upload(file: File | undefined) {
-  if (!file) return;
-  uploading.value = true;
-  await act(async () => uploadVisitPhoto(id, index, await shrinkPhoto(file)));
-  uploading.value = false;
-}
-
-async function remove(photoId: number) {
-  if (!(await confirmBox('Delete photo', 'Delete this photo?'))) return;
-  await act(() => deleteVisitPhoto(id, index, photoId));
-}
+const toggle = (item: CheckItem, done: boolean) => act(() => checkItem(id.value, index.value, item, done));
 
 /** R36-5: ask first when under the minimum time. */
 async function finish() {
   const warn = finishEarlyText(served.value, v.value!.minMinutes);
   if (warn && !(await confirmBox('Finish early', warn))) return;
-  uni.navigateTo({ url: `/pages/caregiver/report?id=${id}&i=${index}` });
+  uni.navigateTo({ url: `/pages/caregiver/report?id=${id.value}&i=${index.value}` });
 }
 
 onLoad((q) => {
-  id = Number(q?.id) || 0;
-  index = Number(q?.i) || 0;
+  id.value = Number(q?.id) || 0;
+  index.value = Number(q?.i) || 0;
 });
 onShow(async () => {
-  if (!(await requireUser(`/pages/caregiver/service?id=${id}&i=${index}`))) return;
+  if (!(await requireUser(`/pages/caregiver/service?id=${id.value}&i=${index.value}`))) return;
   await load();
   if (timer) clearInterval(timer);
   timer = setInterval(() => (now.value = new Date()), 60_000);
@@ -183,11 +154,6 @@ onUnload(stop);
 .tick { display: flex; align-items: center; gap: 16rpx; font-size: 28rpx; padding: 10rpx 0; }
 .box { width: 40rpx; height: 40rpx; border: 2px solid var(--pp-primary-strong); border-radius: 8rpx; display: flex; align-items: center; justify-content: center; color: var(--pp-surface); font-size: 26rpx; flex: none; }
 .box.on { background: var(--pp-primary-strong); }
-.photos { display: flex; flex-wrap: wrap; gap: 16rpx; }
-.photo { position: relative; width: 196rpx; height: 196rpx; border-radius: 12rpx; overflow: hidden; background: var(--pp-background); }
-.img { width: 100%; height: 100%; }
-.remove { position: absolute; top: 6rpx; right: 6rpx; width: 44rpx; height: 44rpx; border-radius: 50%; background: var(--pp-ink); color: var(--pp-surface); font-size: 24rpx; display: flex; align-items: center; justify-content: center; }
-.add { display: flex; align-items: center; justify-content: center; border: 2px dashed var(--pp-border); color: var(--pp-primary-strong); font-weight: 600; font-size: 26rpx; }
 .later-row { display: flex; gap: 16rpx; }
 .ghost { flex: 1; background: var(--pp-surface); color: var(--pp-primary-strong); border: 1px solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-size: 28rpx; }
 .ghost[disabled] { background: var(--pp-surface) !important; color: var(--pp-muted) !important; border-color: var(--pp-border); }

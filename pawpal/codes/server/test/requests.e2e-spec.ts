@@ -1,13 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { addDays, entryFromOf, klDate, visitIncome, type BookingDraft, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type VisitTask } from '@pawpal/shared';
+import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask } from '@pawpal/shared';
 import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AlertsService } from '../src/alerts/alerts.service';
 import { AppModule } from '../src/app.module';
+import { CasesService } from '../src/bookings/cases.service';
 import { OrdersService } from '../src/bookings/orders.service';
+import { TrustService } from '../src/caregivers/trust.service';
 import { DbService } from '../src/db/db.service';
+import { adminLogin } from './admin-helper';
 
 // Area Cheras: no browser test uses it, so these caregivers never show up there.
 // E6-1: the chosen caregiver sees the paid order as a request with its deadline (S01, S06; round 25).
@@ -532,7 +535,7 @@ describe('E6-1 caregiver sees requests', () => {
       expect(list.date).toBe(day);
       expect(list.bufferMin).toBe(30);
       expect(list.tasks).toEqual([
-        { orderId: order.id, index: order.visits.findIndex((v) => v.date === day), number: order.number, date: day, start: 540, minutes: order.visits.find((v) => v.date === day)!.quote.totalMinutes, area: 'Cheras', pets: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }], status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null },
+        { orderId: order.id, index: order.visits.findIndex((v) => v.date === day), number: order.number, date: day, start: 540, minutes: order.visits.find((v) => v.date === day)!.quote.totalMinutes, area: 'Cheras', pets: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }], status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null },
       ]);
       // A date outside the 14 days falls back to today.
       expect((await tasks(cg.token, '?date=2020-01-01')).date).toBe(klDate(new Date()));
@@ -646,7 +649,7 @@ describe('E6-1 caregiver sees requests', () => {
       expect((await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(409)).body.code).toBe('NOT_LIVE_CONFIRM');
       const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
       expect(d.runs[0]).toMatchObject({ status: 'in_service', enteredBy: 'caregiver' });
-      expect(d.runs[1]).toEqual({ status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null });
+      expect(d.runs[1]).toEqual({ status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null });
     });
 
     it('live confirm: the owner is told, confirms from the order, and the caregiver is told (R35-4, R35-5)', async () => {
@@ -735,6 +738,398 @@ describe('E6-1 caregiver sees requests', () => {
       v = (await http().post(`${base(order.id)}/photos/${v.photos[0]}/delete`).set(auth(cg.token)).expect(200)).body;
       expect(v.photos).toHaveLength(8);
       await http().post(`${base(order.id)}/photos/999999999/delete`).set(auth(cg.token)).expect(404);
+    });
+  });
+
+  describe('E8-5 send the report', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const started = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      const base = `/api/caregiver/tasks/${order.id}/0`;
+      await http().post(`${base}/arrive`).set(auth(cg.token)).expect(200);
+      await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, base };
+    };
+
+    it('needs 3 photos and a note for unticked items; the note is a draft until sent (R37-1, R37-2)', async () => {
+      const { cg, base } = await started();
+      let r = await http().post(`${base}/report`).set(auth(cg.token)).expect(409);
+      expect(r.body).toMatchObject({ code: 'REPORT_INCOMPLETE', message: 'Add at least 3 photos (0 so far)' });
+      expect(r.body.problems).toEqual(['Add at least 3 photos (0 so far)', 'Add a note on why Feed, Fresh water, Litter, Walk were not done']);
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      r = await http().post(`${base}/report`).set(auth(cg.token)).expect(409);
+      expect(r.body.message).toBe('Add a note on why Walk was not done');
+      expect((await http().post(`${base}/note`).set(auth(cg.token)).send({ note: 'x'.repeat(501) }).expect(400)).body.code).toBe('NOTE_TOO_LONG');
+      const v = (await http().post(`${base}/note`).set(auth(cg.token)).send({ note: 'Raining, played indoors' }).expect(200)).body as VisitTask;
+      expect(v.note).toBe('Raining, played indoors');
+      expect(((await http().get(base).set(auth(cg.token)).expect(200)).body as VisitTask).note).toBe('Raining, played indoors');
+    });
+
+    it('sending starts the owner\'s 12 h, tells the owner, and locks the report (R37-4, R37-5)', async () => {
+      const { cg, owner, order, base } = await started();
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter', 'walk']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      const v = (await http().post(`${base}/report`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(v.status).toBe('report_sent');
+      expect(Date.now() - klInstant(v.reportedAt!).getTime()).toBeLessThan(60_000);
+
+      const m = (await db().query("SELECT title, body, link_type, link_id FROM messages WHERE user_id = $1 AND title LIKE 'Report for visit%'", [owner.id])).rows;
+      expect(m).toHaveLength(1);
+      const runId = Number((await db().query('SELECT id FROM visit_runs WHERE order_id = $1 AND idx = 0', [order.id])).rows[0].id);
+      expect(m[0]).toMatchObject({ title: 'Report for visit 1 is ready', link_type: 'report', link_id: runId });
+      expect(m[0].body).toBe(`Order ${order.number}: Siti A. sent the report for ${v.date} ${taskTime(v)}. Please check it by ${confirmByText(v.reportedAt!)}.`);
+      const h = await db().query("SELECT to_status FROM status_history WHERE entity = 'visit' AND entity_id = $1 ORDER BY id", [order.id]);
+      expect(h.rows.map((x) => x.to_status)).toEqual(['arrived', 'in_service', 'report_sent']);
+
+      // Locked.
+      expect((await http().post(`${base}/report`).set(auth(cg.token)).expect(409)).body.code).toBe('REPORT_LOCKED');
+      expect((await http().post(`${base}/check`).set(auth(cg.token)).send({ item: 'feed', done: false }).expect(409)).body.code).toBe('REPORT_LOCKED');
+      expect((await http().post(`${base}/note`).set(auth(cg.token)).send({ note: 'later' }).expect(409)).body.code).toBe('REPORT_LOCKED');
+      expect((await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(409)).body.code).toBe('REPORT_LOCKED');
+      expect((await http().post(`${base}/photos/${v.photos[0]}/delete`).set(auth(cg.token)).expect(409)).body.code).toBe('REPORT_LOCKED');
+      // The photos can still be seen by the caregiver.
+      await http().get(`${base}/photos/${v.photos[0]}`).set(auth(cg.token)).expect(200);
+
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0]).toMatchObject({ status: 'report_sent', reportedAt: v.reportedAt });
+    });
+  });
+
+  describe('E9-1 owner reads the report', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const sent = async (send = true) => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      const base = `/api/caregiver/tasks/${order.id}/0`;
+      await http().post(`${base}/arrive`).set(auth(cg.token)).expect(200);
+      await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      await http().post(`${base}/note`).set(auth(cg.token)).send({ note: 'No litter box, owner uses pads' }).expect(200);
+      const v = send ? ((await http().post(`${base}/report`).set(auth(cg.token)).expect(200)).body as VisitTask) : null;
+      return { cg, owner, order, v };
+    };
+
+    it('the owner reads photos, checklist, note and times; from the message link too (R39-1, R39-2)', async () => {
+      const { owner, order, v } = await sent();
+      const r = (await http().get(`/api/orders/${order.id}/visits/0/report`).set(auth(owner.token)).expect(200)).body as VisitReport;
+      expect(r).toEqual({
+        orderId: order.id,
+        number: order.number,
+        index: 0,
+        date: v!.date,
+        start: v!.start,
+        caregiver: 'Siti A.',
+        reportedAt: v!.reportedAt,
+        photos: v!.photos,
+        checklist: [{ item: 'feed', done: true }, { item: 'water', done: true }, { item: 'litter', done: true }, { item: 'walk', done: false }],
+        note: 'No litter box, owner uses pads',
+        status: 'report_sent',
+        confirmedAt: null,
+        confirmedBy: null,
+      });
+      const img = await http().get(`/api/orders/${order.id}/visits/0/photos/${r.photos[0]}`).set(auth(owner.token)).expect(200);
+      expect(img.headers['content-type']).toBe('image/jpeg');
+      expect(img.headers['cache-control']).toBe('private, no-store');
+
+      // The message opens the report.
+      const m = (await db().query("SELECT id, link_id FROM messages WHERE user_id = $1 AND link_type = 'report'", [owner.id])).rows[0];
+      expect((await http().get(`/api/reports/${m.link_id}`).set(auth(owner.token)).expect(200)).body).toEqual(r);
+      const opened = (await http().post(`/api/messages/${m.id}/open`).set(auth(owner.token)).expect(200)).body;
+      expect(opened.latest).toMatchObject({ type: 'report', id: Number(m.link_id), status: 'report_sent', summary: `Order ${order.number}: report for visit 1`, gone: false });
+    });
+
+    it('not before it is sent, and only for the order\'s owner (R39-3, R39-4)', async () => {
+      const { cg, owner, order } = await sent(false);
+      expect((await http().get(`/api/orders/${order.id}/visits/0/report`).set(auth(owner.token)).expect(409)).body.code).toBe('REPORT_NOT_READY');
+      const photo = (await db().query('SELECT id FROM visit_photos WHERE order_id = $1 LIMIT 1', [order.id])).rows[0].id;
+      await http().get(`/api/orders/${order.id}/visits/0/photos/${photo}`).set(auth(owner.token)).expect(409);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/report`).set(auth(cg.token)).expect(200);
+
+      const stranger = await login();
+      await http().get(`/api/orders/${order.id}/visits/0/report`).set(auth(stranger.token)).expect(404);
+      await http().get(`/api/orders/${order.id}/visits/0/photos/${photo}`).set(auth(stranger.token)).expect(404);
+      const runId = (await db().query('SELECT id FROM visit_runs WHERE order_id = $1 AND idx = 0', [order.id])).rows[0].id;
+      await http().get(`/api/reports/${runId}`).set(auth(stranger.token)).expect(404);
+      await http().get('/api/reports/999999999').set(auth(owner.token)).expect(404);
+      await http().get(`/api/orders/${order.id}/visits/5/report`).set(auth(owner.token)).expect(404);
+      await http().get(`/api/orders/${order.id}/visits/0/photos/999999999`).set(auth(owner.token)).expect(404);
+      await http().get(`/api/orders/${order.id}/visits/0/report`).expect(401);
+    });
+  });
+
+  describe('E9-2 confirm or raise a problem', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const sent = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      const base = `/api/caregiver/tasks/${order.id}/0`;
+      await http().post(`${base}/arrive`).set(auth(cg.token)).expect(200);
+      await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter', 'walk']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      await http().post(`${base}/report`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, visit: `/api/orders/${order.id}/visits/0` };
+    };
+    const titles = async (userId: number) => (await db().query('SELECT title, body, link_type FROM messages WHERE user_id = $1 ORDER BY id', [userId])).rows;
+
+    it('the owner confirms once; both sides see Confirmed and the caregiver is told (R40-1)', async () => {
+      const { cg, owner, order, visit } = await sent();
+      const r = (await http().post(`${visit}/confirm`).set(auth(owner.token)).expect(200)).body as VisitReport;
+      expect(r).toMatchObject({ status: 'confirmed', confirmedBy: 'owner' });
+      expect(Date.now() - klInstant(r.confirmedAt!).getTime()).toBeLessThan(60_000);
+      expect((await http().post(`${visit}/confirm`).set(auth(owner.token)).expect(409)).body.code).toBe('ALREADY_CONFIRMED');
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'Too late').expect(409)).body.code).toBe('ALREADY_CONFIRMED');
+      const t = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(t).toMatchObject({ status: 'confirmed', confirmedBy: 'owner' });
+      const m = (await titles(cg.id)).find((x) => x.title === 'Visit 1 confirmed');
+      expect(m.body).toMatch(new RegExp(`^Order ${order.number}: the report for .+ was confirmed by the owner\\.$`));
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0].status).toBe('confirmed');
+      const stranger = await login();
+      await http().post(`${visit}/confirm`).set(auth(stranger.token)).expect(404);
+    });
+
+    it('12 h with no answer confirms by itself, once (R40-2)', async () => {
+      const { cg, owner, order, visit } = await sent();
+      const svc = app.get(CasesService);
+      await svc.autoConfirmDue();
+      expect(((await http().get(`${visit}/report`).set(auth(owner.token)).expect(200)).body as VisitReport).status).toBe('report_sent');
+      await db().query("UPDATE visit_runs SET reported_at = now() - interval '12 hours 1 minute' WHERE order_id = $1", [order.id]);
+      expect(await svc.autoConfirmDue()).toBeGreaterThanOrEqual(1);
+      expect(await svc.autoConfirmDue()).toBe(0);
+      expect((await http().get(`${visit}/report`).set(auth(owner.token)).expect(200)).body).toMatchObject({ status: 'confirmed', confirmedBy: 'auto' });
+      expect((await titles(cg.id)).filter((x) => x.title === 'Visit 1 confirmed')).toHaveLength(1);
+      const h = await db().query("SELECT actor_type, reason FROM status_history WHERE entity = 'visit' AND entity_id = $1 AND to_status = 'confirmed'", [order.id]);
+      expect(h.rows).toEqual([{ actor_type: 'system', reason: 'Visit 1 confirmed automatically after 12 h' }]);
+      // The test tool does the same for one visit.
+      const other = await sent();
+      expect((await http().post('/api/dev/report-due').send({ number: other.order.number, index: 0 }).expect(200)).body.confirmed).toBeGreaterThanOrEqual(1);
+      expect(((await http().get(`${other.visit}/report`).set(auth(other.owner.token)).expect(200)).body as VisitReport).status).toBe('confirmed');
+      await http().post('/api/dev/report-due').send({ number: other.order.number, index: 0 }).expect(404);
+    });
+
+    it('a problem makes a case, stops the clock, and admin can start the review (R40-3 … R40-6)', async () => {
+      const { cg, owner, order, visit } = await sent();
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'report').field('description', ' ').expect(400)).body).toMatchObject({ code: 'CASE_INVALID', message: 'Describe the problem' });
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'x').field('description', 'Hi').expect(400)).body.message).toBe('Choose what went wrong');
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'report').field('description', 'Hi').attach('photos', Buffer.from('nope'), 'a.txt').expect(400)).body.code).toBe('PHOTO_TYPE');
+      await http().get(`${visit}/case`).set(auth(owner.token)).expect(404);
+
+      const c = (await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'report').field('description', 'Litter not cleaned')
+        .attach('photos', JPEG, 'a.jpg').attach('photos', JPEG, 'b.jpg').expect(200)).body as VisitCase;
+      expect(c).toMatchObject({ orderId: order.id, number: order.number, index: 0, kind: 'report', description: 'Litter not cleaned', status: 'sent', reviewingAt: null });
+      expect(c.photos).toHaveLength(2);
+      expect((await http().get(`${visit}/case`).set(auth(owner.token)).expect(200)).body).toEqual(c);
+      const img = await http().get(`${visit}/case/photos/${c.photos[0]}`).set(auth(owner.token)).expect(200);
+      expect(img.headers['content-type']).toBe('image/jpeg');
+      expect((await http().get(`${visit}/report`).set(auth(owner.token)).expect(200)).body.status).toBe('disputed');
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask).status).toBe('disputed');
+      // One case per visit; no confirm, and the 12 h clock no longer applies.
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'Again').expect(409)).body.code).toBe('CASE_OPEN');
+      expect((await http().post(`${visit}/confirm`).set(auth(owner.token)).expect(409)).body.code).toBe('CASE_OPEN');
+      await db().query("UPDATE visit_runs SET reported_at = now() - interval '13 hours' WHERE order_id = $1", [order.id]);
+      await app.get(CasesService).autoConfirmDue();
+      expect((await http().get(`${visit}/report`).set(auth(owner.token)).expect(200)).body.status).toBe('disputed');
+      const cgMsg = (await titles(cg.id)).find((x) => x.title === 'Problem raised on visit 1');
+      expect(cgMsg.body).toMatch(/the owner raised a problem \(Report problem\) about .+\. Our team will review it and may contact you\.$/);
+
+      // Others cannot see it.
+      const stranger = await login();
+      await http().get(`${visit}/case`).set(auth(stranger.token)).expect(404);
+      await http().get(`${visit}/case/photos/${c.photos[0]}`).set(auth(stranger.token)).expect(404);
+
+      // Admin list and review.
+      const admin = await adminLogin(app, ['cases']);
+      const rows = (await http().get('/api/admin/cases').set(admin.header).expect(200)).body as AdminCaseRow[];
+      expect(rows.find((x) => x.id === c.id)).toMatchObject({ number: order.number, visit: 1, kind: 'report', photos: 2, status: 'sent', payoutHeld: true });
+      await http().post(`/api/admin/cases/${c.id}/review`).set(admin.header).expect(200);
+      expect((await http().post(`/api/admin/cases/${c.id}/review`).set(admin.header).expect(409)).body.code).toBe('CASE_NOT_NEW');
+      const after = (await http().get(`${visit}/case`).set(auth(owner.token)).expect(200)).body as VisitCase;
+      expect(after.status).toBe('reviewing');
+      expect(after.reviewingAt).not.toBeNull();
+      expect((await titles(owner.id)).find((x) => x.title === 'We are reviewing visit 1')).toMatchObject({ link_type: 'report' });
+      const noPage = await adminLogin(app, ['payments']);
+      await http().get('/api/admin/cases').set(noPage.header).expect(403);
+    });
+  });
+
+  describe('E9-3 rate the caregiver', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    /** Both visits done and reported; `confirm` lists the visits the owner confirms. */
+    const done = async (confirm: number[] = [0, 1]) => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      for (const i of [0, 1]) {
+        await http().post('/api/dev/visit-soon').send({ number: order.number, index: i }).expect(200);
+        const base = `/api/caregiver/tasks/${order.id}/${i}`;
+        await http().post(`${base}/arrive`).set(auth(cg.token)).expect(200);
+        await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+        for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+        for (const item of ['feed', 'water', 'litter', 'walk']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+        await http().post(`${base}/report`).set(auth(cg.token)).expect(200);
+      }
+      for (const i of confirm) await http().post(`/api/orders/${order.id}/visits/${i}/confirm`).set(auth(owner.token)).expect(200);
+      return { cg, owner, order };
+    };
+    const review = async (token: string, id: number) => ((await http().get(`/api/orders/${id}/detail`).set(auth(token)).expect(200)).body as OrderDetail).review;
+
+    it('opens only when every visit is confirmed; 1 to 5 stars, once; the caregiver is told (R41-1, R41-2)', async () => {
+      const { cg, owner, order } = await done([0]);
+      expect(await review(owner.token, order.id)).toEqual({ state: 'not_yet', until: null, mine: null });
+      expect((await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 5 }).expect(409)).body.code).toBe('NOT_CONFIRMED');
+      await http().post(`/api/orders/${order.id}/visits/1/confirm`).set(auth(owner.token)).expect(200);
+      const open = await review(owner.token, order.id);
+      expect(open.state).toBe('open');
+      expect(klInstant(open.until!).getTime() - Date.now()).toBeGreaterThan(13.9 * 86_400_000);
+
+      expect((await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 0 }).expect(400)).body).toMatchObject({ code: 'REVIEW_INVALID', message: 'Tap 1 to 5 stars' });
+      expect((await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 4, comment: 'x'.repeat(301) }).expect(400)).body.code).toBe('REVIEW_INVALID');
+      const stranger = await login();
+      await http().post(`/api/orders/${order.id}/review`).set(auth(stranger.token)).send({ stars: 5 }).expect(404);
+
+      const r = (await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 4, comment: '  Kind and on time  ' }).expect(200)).body as OrderReview;
+      expect(r).toMatchObject({ state: 'done', mine: { stars: 4, comment: 'Kind and on time', ownerName: 'Ali', reply: null } });
+      expect((await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 5 }).expect(409)).body.code).toBe('ALREADY_REVIEWED');
+      expect(await review(owner.token, order.id)).toEqual(r);
+      const m = (await db().query('SELECT title, body, link_type FROM messages WHERE user_id = $1 AND title = $2', [cg.id, `New review for order ${order.number}`])).rows[0];
+      expect(m).toMatchObject({ body: `Ali gave you 4 stars for order ${order.number}. You can reply once.`, link_type: 'request' });
+    });
+
+    it('closes 14 days after the last confirm (R41-3)', async () => {
+      const { owner, order } = await done();
+      await db().query("UPDATE visit_runs SET confirmed_at = now() - interval '14 days 1 minute' WHERE order_id = $1", [order.id]);
+      expect((await review(owner.token, order.id)).state).toBe('closed');
+      expect((await http().post(`/api/orders/${order.id}/review`).set(auth(owner.token)).send({ stars: 5 }).expect(409)).body.code).toBe('REVIEW_CLOSED');
+    });
+
+    it('the profile shows the average and the newest 5; the caregiver replies once; admin hides with a reason (R41-4 … R41-6)', async () => {
+      const first = await done();
+      const cg = first.cg;
+      const owner = await login();
+      expect((await http().get(`/api/caregivers/${cg.id}/reviews`).set(auth(owner.token)).expect(200)).body).toEqual({ rating: { avg: null, count: 0 }, reviews: [] });
+      expect((await app.get(TrustService).approvedCards([cg.id]))[0].rating).toEqual({ avg: null, count: 0 });
+      await http().post(`/api/orders/${first.order.id}/review`).set(auth(first.owner.token)).send({ stars: 5, comment: 'Great' }).expect(200);
+      // More orders for the same caregiver, rated straight in the table.
+      for (const stars of [4, 4, 3, 5, 4]) {
+        const { order } = await paidOrder(cg);
+        await db().query("INSERT INTO reviews (order_id, owner_id, caregiver_id, stars, comment, owner_name) SELECT id, owner_id, caregiver_id, $2, '', 'Mei L.' FROM orders WHERE id = $1", [order.id, stars]);
+      }
+      const page = (await http().get(`/api/caregivers/${cg.id}/reviews`).set(auth(owner.token)).expect(200)).body as CaregiverReviews;
+      expect(page.rating).toEqual({ avg: 4.2, count: 6 });
+      expect(page.reviews.map((x) => x.stars)).toEqual([4, 5, 3, 4, 4]);
+      expect((await app.get(TrustService).approvedCards([cg.id]))[0].rating).toEqual({ avg: 4.2, count: 6 });
+
+      // Reply once (S07).
+      const base = `/api/requests/${first.order.id}/review`;
+      expect(((await http().get(base).set(auth(cg.token)).expect(200)).body as { review: Review }).review).toMatchObject({ stars: 5, comment: 'Great', reply: null });
+      expect((await http().post(`${base}/reply`).set(auth(cg.token)).send({ reply: ' ' }).expect(400)).body.code).toBe('REPLY_INVALID');
+      const replied = (await http().post(`${base}/reply`).set(auth(cg.token)).send({ reply: 'Thank you!' }).expect(200)).body as { review: Review };
+      expect(replied.review).toMatchObject({ reply: 'Thank you!' });
+      expect(replied.review.repliedAt).not.toBeNull();
+      expect((await http().post(`${base}/reply`).set(auth(cg.token)).send({ reply: 'Again' }).expect(409)).body.code).toBe('ALREADY_REPLIED');
+      expect((await review(first.owner.token, first.order.id)).mine).toMatchObject({ reply: 'Thank you!' });
+      expect((await db().query('SELECT body FROM messages WHERE user_id = $1 AND title = $2', [first.owner.id, 'Your caregiver replied'])).rows[0].body).toBe(`Order ${first.order.number}: the caregiver replied to your review.`);
+      const other = await caregiver();
+      await http().get(base).set(auth(other.token)).expect(404);
+
+      // Admin hides it.
+      const admin = await adminLogin(app, ['reviews']);
+      const rows = (await http().get('/api/admin/reviews').set(admin.header).expect(200)).body as AdminReviewRow[];
+      const id = page.reviews.find((x) => x.stars === 3)!.id;
+      expect(rows.find((x) => x.id === id)).toMatchObject({ stars: 3, caregiver: 'Siti Aminah', hidden: false, hiddenReason: null });
+      expect((await http().post(`/api/admin/reviews/${id}/hide`).set(admin.header).send({ reason: ' ' }).expect(400)).body.code).toBe('REASON_REQUIRED');
+      const after = (await http().post(`/api/admin/reviews/${id}/hide`).set(admin.header).send({ reason: 'Rude words' }).expect(200)).body as AdminReviewRow[];
+      expect(after.find((x) => x.id === id)).toMatchObject({ hidden: true, hiddenReason: 'Rude words' });
+      expect((await http().post(`/api/admin/reviews/${id}/hide`).set(admin.header).send({ reason: 'Again' }).expect(409)).body.code).toBe('ALREADY_HIDDEN');
+      const now = (await http().get(`/api/caregivers/${cg.id}/reviews`).set(auth(owner.token)).expect(200)).body as CaregiverReviews;
+      expect(now.rating).toEqual({ avg: 4.4, count: 5 });
+      expect(now.reviews.map((x) => x.id)).not.toContain(id);
+      const noPage = await adminLogin(app, ['cases']);
+      await http().get('/api/admin/reviews').set(noPage.header).expect(403);
+    });
+  });
+
+  describe('E8-6 location check', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const home = { lat: 3.1319, lng: 101.6841 };
+    const near = { lat: 3.1329, lng: 101.6841 }; // ~110 m
+    const far = { lat: 3.1419, lng: 101.6841 }; // ~1.1 km
+    const started = async (withHome: boolean) => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      const a = (await http().get('/api/addresses').set(auth(owner.token)).expect(200)).body[0];
+      if (withHome) {
+        const saved = (await http().post(`/api/addresses/${a.id}`).set(auth(owner.token)).send({ ...address, home }).expect(200)).body;
+        expect(saved.home).toEqual(home);
+        // An edit without the home position keeps it.
+        expect((await http().post(`/api/addresses/${a.id}`).set(auth(owner.token)).send({ ...address, label: 'Flat' }).expect(200)).body.home).toEqual(home);
+      }
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      return { cg, owner, order, base: `/api/caregiver/tasks/${order.id}/0` };
+    };
+    const checks = async (id: number) =>
+      (await db().query('SELECT moment, lat::float, lng::float, distance_m, flag FROM location_checks WHERE order_id = $1 ORDER BY id', [id])).rows;
+
+    it('saves the location at arrive and send only, measures it from home and flags > 500 m (R38-1, R38-4)', async () => {
+      const { cg, owner, order, base } = await started(true);
+      const v = (await http().post(`${base}/arrive`).set(auth(cg.token)).send({ location: near }).expect(200)).body as VisitTask;
+      expect(v.locationNotice).toBe('Your location is saved only now and when you send the report.');
+      await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter', 'walk']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      await http().post(`${base}/report`).set(auth(cg.token)).send({ location: far }).expect(200);
+      const rows = await checks(order.id);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({ moment: 'arrive', lat: near.lat, lng: near.lng, flag: null });
+      expect(rows[0].distance_m).toBeGreaterThan(100);
+      expect(rows[0].distance_m).toBeLessThan(120);
+      expect(rows[1]).toMatchObject({ moment: 'report', flag: 'far' });
+      expect(rows[1].distance_m).toBeGreaterThan(1000);
+
+      // R38-5: the owner sees only that a location was recorded.
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0].locationRecorded).toBe(true);
+      expect(JSON.stringify(d)).not.toContain('distance');
+
+      // R38-4: admin's list has the far one only.
+      const admin = await adminLogin(app, ['locations']);
+      const list = (await http().get('/api/admin/location-flags').set(admin.header).expect(200)).body as LocationFlagRow[];
+      const mine = list.filter((r) => r.orderId === order.id);
+      expect(mine).toEqual([expect.objectContaining({ number: order.number, visit: 1, moment: 'report', flag: 'far', caregiver: 'Siti Aminah' })]);
+      const other = await adminLogin(app, ['payments']);
+      await http().get('/api/admin/location-flags').set(other.header).expect(403);
+    });
+
+    it('not shared and no home position never block, and are flagged (R38-2, R38-3)', async () => {
+      const { cg, owner, order, base } = await started(false);
+      await http().post(`${base}/arrive`).set(auth(cg.token)).send({}).expect(200);
+      const noHome = await started(false);
+      await http().post(`${noHome.base}/arrive`).set(auth(noHome.cg.token)).send({ location: near }).expect(200);
+      expect((await checks(order.id))[0]).toMatchObject({ moment: 'arrive', lat: null, distance_m: null, flag: 'not_shared' });
+      expect((await checks(noHome.order.id))[0]).toMatchObject({ lat: near.lat, distance_m: null, flag: 'no_home' });
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0]).toMatchObject({ status: 'arrived', locationRecorded: false });
     });
   });
 });

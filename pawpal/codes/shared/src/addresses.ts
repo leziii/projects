@@ -4,6 +4,7 @@
  * are private and stored encrypted; entry instructions are asked per booking, not stored here.
  */
 import { normalizeMyPhone } from './auth';
+import { geoPointOf, type GeoPoint } from './location';
 import { RuleError } from './rules';
 
 /** Pilot areas: KL plus Petaling Jaya. Admin edits the list later (E14). */
@@ -36,6 +37,8 @@ export interface AddressInput {
   contactPhone: string;
   emergencyName?: string;
   emergencyPhone?: string;
+  /** R38-2: the home position, set with "Use my current location"; null clears it. */
+  home?: GeoPoint | null;
 }
 
 /** Cleaned fields. Phones are +60… */
@@ -49,6 +52,7 @@ export interface AddressFields {
   contactPhone: string;
   emergencyName: string | null;
   emergencyPhone: string | null;
+  home: GeoPoint | null;
 }
 
 export interface Address extends AddressFields {
@@ -82,7 +86,7 @@ export function checkAddress(input: Partial<AddressInput>): AddressFields {
   const emergencyPhone = emergencyRaw ? normalizeMyPhone(emergencyRaw) : null;
   if (emergencyRaw && !emergencyPhone) throw new RuleError('ADDRESS_EMERGENCY', 'Emergency phone: a Malaysian mobile number');
 
-  return { label, area: input.area as Area, street, unit, postcode, contactName, contactPhone, emergencyName: emergencyName || null, emergencyPhone };
+  return { label, area: input.area as Area, street, unit, postcode, contactName, contactPhone, emergencyName: emergencyName || null, emergencyPhone, home: geoPointOf(input.home) };
 }
 
 /** "A-12-3, Jalan Kiara 3, 50480 Mont Kiara" — shown only inside the app, never in messages. */

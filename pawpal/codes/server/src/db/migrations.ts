@@ -566,4 +566,93 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX visit_photos_visit ON visit_photos (order_id, idx)',
     ],
   },
+  {
+    id: '028_visit_report',
+    sql: [
+      // E8-5 (round 37): the caregiver sends the report; the note is a draft until then, and the owner's 12 h starts at reported_at.
+      'ALTER TABLE visit_runs DROP CONSTRAINT visit_runs_status_check',
+      "ALTER TABLE visit_runs ADD CONSTRAINT visit_runs_status_check CHECK (status IN ('arrived', 'in_service', 'report_sent'))",
+      'ALTER TABLE visit_runs ADD COLUMN reported_at TIMESTAMPTZ(3) NULL',
+      "ALTER TABLE visit_runs ADD COLUMN note VARCHAR(500) NOT NULL DEFAULT ''",
+    ],
+  },
+  {
+    id: '029_location_checks',
+    sql: [
+      // E8-6 (round 38): the caregiver's location at "I've arrived" and "Send report" only; flagged rows go to admin.
+      `CREATE TABLE location_checks (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        moment VARCHAR(10) NOT NULL CHECK (moment IN ('arrive', 'report')),
+        caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        lat NUMERIC(9, 6) NULL,
+        lng NUMERIC(9, 6) NULL,
+        distance_m INT NULL,
+        flag VARCHAR(12) NULL CHECK (flag IN ('far', 'not_shared', 'no_home')),
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX location_checks_flag ON location_checks (id DESC) WHERE flag IS NOT NULL',
+      "UPDATE admins SET pages = array_append(pages, 'locations') WHERE NOT ('locations' = ANY (pages))",
+    ],
+  },
+  {
+    id: '030_report_links',
+    sql: [
+      // E9-1 (R39-1): "Report for visit N is ready" links straight to that visit's report by the run's id.
+      'ALTER TABLE visit_runs ADD COLUMN id BIGSERIAL UNIQUE',
+    ],
+  },
+  {
+    id: '031_cases',
+    sql: [
+      // E9-2 (round 40): the owner confirms (or 12 h pass), or raises a problem that becomes a case.
+      'ALTER TABLE visit_runs DROP CONSTRAINT visit_runs_status_check',
+      "ALTER TABLE visit_runs ADD CONSTRAINT visit_runs_status_check CHECK (status IN ('arrived', 'in_service', 'report_sent', 'confirmed', 'disputed'))",
+      'ALTER TABLE visit_runs ADD COLUMN confirmed_at TIMESTAMPTZ(3) NULL',
+      "ALTER TABLE visit_runs ADD COLUMN confirmed_by VARCHAR(6) NULL CHECK (confirmed_by IN ('owner', 'auto'))",
+      "CREATE INDEX visit_runs_report_due ON visit_runs (reported_at) WHERE status = 'report_sent'",
+      `CREATE TABLE cases (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        owner_id BIGINT NOT NULL REFERENCES users (id),
+        kind VARCHAR(10) NOT NULL CHECK (kind IN ('report', 'late', 'no_entry', 'other')),
+        description VARCHAR(500) NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'reviewing')),
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        reviewing_at TIMESTAMPTZ(3) NULL,
+        UNIQUE (order_id, idx)
+      )`,
+      `CREATE TABLE case_photos (
+        id BIGSERIAL PRIMARY KEY,
+        case_id BIGINT NOT NULL REFERENCES cases (id),
+        file_key VARCHAR(80) NOT NULL
+      )`,
+      "UPDATE admins SET pages = array_append(pages, 'cases') WHERE NOT ('cases' = ANY (pages))",
+    ],
+  },
+  {
+    id: '032_reviews',
+    sql: [
+      // E9-3 (round 41): one review per order once every visit is confirmed; the caregiver replies once; admin may hide.
+      `CREATE TABLE reviews (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL UNIQUE REFERENCES orders (id),
+        owner_id BIGINT NOT NULL REFERENCES users (id),
+        caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        stars SMALLINT NOT NULL CHECK (stars BETWEEN 1 AND 5),
+        comment VARCHAR(300) NOT NULL DEFAULT '',
+        owner_name VARCHAR(40) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        reply VARCHAR(300) NULL,
+        replied_at TIMESTAMPTZ(3) NULL,
+        hidden_at TIMESTAMPTZ(3) NULL,
+        hidden_reason VARCHAR(200) NULL,
+        hidden_by VARCHAR(64) NULL
+      )`,
+      'CREATE INDEX reviews_caregiver ON reviews (caregiver_id, id DESC) WHERE hidden_at IS NULL',
+      "UPDATE admins SET pages = array_append(pages, 'reviews') WHERE NOT ('reviews' = ANY (pages))",
+    ],
+  },
 ];

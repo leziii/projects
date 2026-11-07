@@ -23,11 +23,22 @@
           <text class="note" data-test="visit-price">{{ v.quote.totalMinutes }} min · paid {{ formatRM(v.paidSen) }}</text>
           <text class="link">Details ›</text>
         </view>
+        <text v-if="order.runs[i]?.status === 'report_sent'" class="link" data-test="report-ready" @click.stop="openReport(i)">{{ reportReadyText(order.runs[i].reportedAt!, new Date()) }} ›</text>
         <button v-if="canConfirm(i)" class="primary small" data-test="confirm-entry" :disabled="busy" @click.stop="confirm(i)">
           Confirm {{ order.caregiver.displayName }} is in
         </button>
       </view>
       <text class="note" data-test="order-pets">For {{ order.pets.map((p) => p.name).join(', ') }}</text>
+    </view>
+
+    <view v-if="order.review.state === 'open'" class="card" data-test="rate-box">
+      <text class="section">How was it?</text>
+      <text class="note" data-test="rate-until">{{ rateUntilText(order.review.until!) }}</text>
+      <button class="primary small" data-test="rate" @click="rate">Rate {{ order.caregiver.displayName }}</button>
+    </view>
+    <view v-else-if="order.review.mine" class="card" data-test="my-review">
+      <text class="section">Your review</text>
+      <ReviewItem :review="order.review.mine" />
     </view>
 
     <view class="card">
@@ -61,10 +72,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app';
-import { ENTRY_METHOD_LABEL, REQUEST_RULES, canRebook, formatRM, orderTag, payResult, refundLine, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
+import { ENTRY_METHOD_LABEL, REQUEST_RULES, canRebook, formatRM, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { confirmEntry, getOrderDetail } from '@/api/booking';
 import HelpButton from '@/components/HelpButton.vue';
+import ReviewItem from '@/components/ReviewItem.vue';
 import { copyText } from '@/copy';
 import { rebookWithConfirm, withdrawWithConfirm } from '@/order-actions';
 
@@ -134,6 +146,12 @@ async function confirm(i: number) {
 }
 
 /** R32-1 */
+/** R39-1: straight to the report. */
+const openReport = (i: number) => uni.navigateTo({ url: `/pages/orders/report?id=${id}&i=${i}` });
+
+/** R41-1 O21 */
+const rate = () => uni.navigateTo({ url: `/pages/orders/review?id=${id}` });
+
 function openVisit(i: number) {
   uni.navigateTo({ url: `/pages/orders/visit?id=${id}&i=${i}` });
 }

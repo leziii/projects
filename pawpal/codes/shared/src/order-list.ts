@@ -7,6 +7,7 @@ import { formatRM, type ServiceLevel, type VisitQuote } from './rules';
 import { timeText } from './schedule';
 import { visitWhen, type VisitAddress } from './requests';
 import type { VisitRun } from './tasks';
+import type { OrderReview } from './reviews';
 
 export type OrderFilter = 'all' | 'waiting' | 'booked' | 'ended';
 
@@ -65,12 +66,14 @@ export interface OrderDetail extends OrderView {
   address: (VisitAddress & { area: string }) | null;
   /** How far each visit has got, in the order of `visits` (R35-1). */
   runs: VisitRun[];
+  /** E9-3 (R41-1, R41-3): whether the owner can rate the caregiver now. */
+  review: OrderReview;
 }
 
 /** R31-3, R35-1: a visit's status for the owner — from the order, then from its own progress once booked. */
 export function visitStatus(o: Pick<OrderView, 'status'>, run?: Pick<VisitRun, 'status'>): string {
   if (o.status === 'pending_accept') return 'Waiting for caregiver';
-  if (o.status === 'accepted') return run?.status === 'arrived' ? 'Caregiver arrived' : run?.status === 'in_service' ? 'In service' : 'Booked';
+  if (o.status === 'accepted') return { arrived: 'Caregiver arrived', in_service: 'In service', report_sent: 'Report ready', confirmed: 'Confirmed', disputed: 'Under review' }[run?.status as string] ?? 'Booked';
   if (o.status === 'awaiting_payment') return 'Not paid yet';
   return 'Not going ahead';
 }

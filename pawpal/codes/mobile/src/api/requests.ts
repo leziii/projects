@@ -1,4 +1,4 @@
-import type { CheckItem, RejectReason, RequestDetail, RequestList, TaskList, VisitTask } from '@pawpal/shared';
+import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export interface CaregiverHome {
@@ -20,7 +20,7 @@ export const getTasks = (date?: string) => api<TaskList>(`/caregiver/tasks${date
 /** S09 (E8-2): one visit of an accepted order. */
 export const getVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}`);
 /** S10 (E8-3): "I've arrived", and for Pre-authorised the caregiver's entry confirm. */
-export const arriveVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/arrive`, {});
+export const arriveVisit = (orderId: number, i: number, location: GeoPoint | null) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/arrive`, { location });
 export const enterVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/enter`, {});
 /** S11 (E8-4): tick an item, add or delete a photo, see a photo (private, so loaded with the login token). */
 export const checkItem = (orderId: number, i: number, item: CheckItem, done: boolean) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/check`, { item, done });
@@ -45,3 +45,10 @@ export async function visitPhotoUrl(orderId: number, i: number, photoId: number)
   if (!res.ok) throw new ApiError('NO_PHOTO', 'Could not load the photo', res.status);
   return URL.createObjectURL(await res.blob());
 }
+/** S12 (E8-5): the note draft, and sending the report. */
+export const saveReportNote = (orderId: number, i: number, note: string) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/note`, { note });
+export const sendReport = (orderId: number, i: number, location: GeoPoint | null) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/report`, { location });
+
+/** E9-3 S07 (R41-5) */
+export const getRequestReview = (id: number) => api<{ review: Review | null }>(`/requests/${id}/review`);
+export const replyReview = (id: number, reply: string) => api<{ review: Review | null }>(`/requests/${id}/review/reply`, { reply });

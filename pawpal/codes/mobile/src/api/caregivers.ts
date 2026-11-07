@@ -1,7 +1,10 @@
-import type { CaregiverCard } from '@pawpal/shared';
+import type { CaregiverCard, CaregiverReviews } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export const getCaregiverCard = (id: number) => api<CaregiverCard>(`/caregivers/${id}`);
+
+/** E9-3 O08 (R41-4) */
+export const getCaregiverReviews = (id: number) => api<CaregiverReviews>(`/caregivers/${id}/reviews`);
 
 /** The caregiver's approved photo as a local object URL (the image needs the login token). */
 export async function caregiverPhotoUrl(id: number): Promise<string> {

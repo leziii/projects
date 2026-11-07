@@ -37,6 +37,7 @@ describe('E3-4 addresses', () => {
       contactPhone: '+60123456789',
       emergencyName: null,
       emergencyPhone: null,
+      home: null,
     });
     expect(checkAddress({ ...home, emergencyName: 'Lim', emergencyPhone: '+60 11-2345 6789' })).toMatchObject({ emergencyName: 'Lim', emergencyPhone: '+601123456789' });
   });

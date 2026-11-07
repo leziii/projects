@@ -190,8 +190,10 @@ describe('E1-3 payments with the mock gateway', () => {
 
   it('lists the latest payments, newest first', async () => {
     const c = await charge();
-    const list = (await http().get('/api/payments').expect(200)).body;
-    expect(list[0].id).toBe(c.id);
+    const list = (await http().get('/api/payments').expect(200)).body as { id: number }[];
+    // Other test files make payments at the same time, so ours is near the top, not always first.
+    expect(list.map((p) => p.id)).toContain(c.id);
+    expect(list.map((p) => p.id)).toEqual([...list.map((p) => p.id)].sort((a, b) => b - a));
     expect(list.length).toBeLessThanOrEqual(50);
   });
 });

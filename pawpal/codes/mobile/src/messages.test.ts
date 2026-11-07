@@ -37,6 +37,7 @@ describe('E3-3 message links', () => {
   it('a pet decision opens the pet status; other links stay on the message', () => {
     expect(linkPage({ type: 'pet', id: 5, gone: false })).toBe('/pages/pets/status?id=5');
     expect(linkPage({ type: 'pet', id: 5, gone: true })).toBeNull();
+    expect(linkPage({ type: 'report', id: 7, gone: false })).toBe('/pages/orders/report?run=7');
     expect(linkPage({ type: 'caregiver_application', id: 1, gone: false })).toBe('/pages/apply/status');
     expect(linkPage({ type: 'payment', id: 5, gone: false })).toBeNull();
     expect(linkPage({ type: 'order', id: 9, gone: false })).toBe('/pages/orders/detail?id=9');

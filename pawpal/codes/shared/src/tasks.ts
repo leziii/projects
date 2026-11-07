@@ -9,9 +9,17 @@ import { petsText, type VisitAddress } from './requests';
 
 export const TASK_RULES = { days: 14 } as const;
 
-/** R35-1: To do → Arrived → In service; report stages come with E8-5, "cancelled" with E10. */
-export type TaskStatus = 'todo' | 'arrived' | 'in_service' | 'cancelled';
-export const TASK_STATUS_LABEL: Record<TaskStatus, string> = { todo: 'To do', arrived: 'Arrived', in_service: 'In service', cancelled: 'Cancelled' };
+/** R35-1, R37-4, R40-1 … R40-3: To do → Arrived → In service → Report sent → Confirmed or Under review; "cancelled" with E10. */
+export type TaskStatus = 'todo' | 'arrived' | 'in_service' | 'report_sent' | 'confirmed' | 'disputed' | 'cancelled';
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  todo: 'To do',
+  arrived: 'Arrived',
+  in_service: 'In service',
+  report_sent: 'Report sent',
+  confirmed: 'Confirmed',
+  disputed: 'Under review',
+  cancelled: 'Cancelled',
+};
 
 /** How far one visit has got (R35-1, R35-5); times are KL "YYYY-MM-DD HH:MM:SS.mmm". */
 export interface VisitRun {
@@ -19,9 +27,16 @@ export interface VisitRun {
   arrivedAt: string | null;
   enteredAt: string | null;
   enteredBy: 'caregiver' | 'owner' | null;
+  /** R37-4: when the report was sent; the owner's 12 h starts here. */
+  reportedAt: string | null;
+  /** R38-5: a location was saved for this visit (the owner sees only this, never the distance). */
+  locationRecorded: boolean;
+  /** R40-1, R40-2: when and how the visit was confirmed. */
+  confirmedAt: string | null;
+  confirmedBy: 'owner' | 'auto' | null;
 }
 
-export const NOT_STARTED: VisitRun = { status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null };
+export const NOT_STARTED: VisitRun = { status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null };
 
 /** R35-2: "I've arrived" works from 30 min before the planned start. */
 export const VISIT_RULES = { arriveFromMin: 30 } as const;
@@ -41,6 +56,10 @@ export interface Task {
   arrivedAt: string | null;
   enteredAt: string | null;
   enteredBy: 'caregiver' | 'owner' | null;
+  reportedAt: string | null;
+  locationRecorded: boolean;
+  confirmedAt: string | null;
+  confirmedBy: 'owner' | 'auto' | null;
 }
 
 export interface TaskList {
@@ -104,6 +123,10 @@ export interface VisitTask extends Task {
   checklist: CheckRow[];
   /** E8-4 (R36-4): ids of the photos taken so far, oldest first. */
   photos: number[];
+  /** E8-5 (R37-2): the report note, saved as a draft while typing. */
+  note: string;
+  /** E8-6 (R38-1): the notice shown under the buttons that save the location. */
+  locationNotice: string;
 }
 
 /** R34-4: is now inside the entry window of this visit? */

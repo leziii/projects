@@ -18,7 +18,7 @@ test('admin logs in with password and code, comes back to the page, logs out', a
   await fillLogin(page, username, ADMIN_PASSWORD, await adminCode(request, username));
   await expect(page).toHaveURL(/\/payments$/);
   await expect(page.locator('[data-test=admin-name]')).toHaveText('E2E Admin');
-  await expect(page.locator('[data-test=menu] .el-menu-item')).toHaveText(['Dashboard', 'Caregiver review', 'Pet check', 'Rules', 'Promo codes', 'Payments (test)', 'Test tools']);
+  await expect(page.locator('[data-test=menu] .el-menu-item')).toHaveText(['Dashboard', 'Caregiver review', 'Pet check', 'Rules', 'Promo codes', 'Payments (test)', 'Location flags', 'Cases', 'Reviews', 'Test tools']);
 
   await page.reload(); // still logged in
   await expect(page.locator('[data-test=new-charge]')).toBeVisible();

@@ -165,6 +165,22 @@
         <p class="hint">The visit moves to today, 10 minutes from now, so the caregiver can tap "I've arrived".</p>
       </el-form>
     </el-card>
+
+    <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
+      <template #header>Make a report 12 h old (E9-2)</template>
+      <el-form label-width="110px" data-test="due-tool" @submit.prevent>
+        <el-form-item label="Order number">
+          <el-input v-model="dueNumber" placeholder="A visit with a sent report" data-test="due-number" />
+        </el-form-item>
+        <el-form-item label="Visit">
+          <el-input-number v-model="dueVisit" :min="1" :max="60" data-test="due-visit" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" data-test="due-run" @click="makeDue">Auto-confirm now</el-button>
+        </el-form-item>
+        <p class="hint">Moves the report's sent time back 12 h, so the visit confirms itself as if the owner did nothing.</p>
+      </el-form>
+    </el-card>
   </div>
 </template>
 
@@ -180,6 +196,7 @@ import {
   addTestVisit,
   expireRequest,
   visitSoon,
+  reportDue,
   markOrderSettled,
   alertLog,
   alertSummary,
@@ -284,6 +301,18 @@ async function moveSoon() {
   try {
     const r = await visitSoon(soonNumber.value, soonVisit.value);
     ElMessage.success(`Visit ${soonVisit.value} of ${r.number} now starts at ${timeText(r.start)} today`);
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
+
+const dueNumber = ref('');
+const dueVisit = ref(1);
+
+async function makeDue() {
+  try {
+    const r = await reportDue(dueNumber.value, dueVisit.value);
+    ElMessage.success(`Visit ${dueVisit.value} of ${r.number} is now confirmed automatically`);
   } catch (err) {
     ElMessage.error((err as Error).message);
   }

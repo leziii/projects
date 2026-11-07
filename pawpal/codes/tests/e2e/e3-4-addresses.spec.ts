@@ -19,11 +19,12 @@ test('owner adds two addresses, picks the default, edits and deletes', async ({ 
   // Contact and phone are required.
   await page.locator('[data-test=add-address]').click();
   await fillAddress(page, { label: 'Home', area: 'Mont Kiara', street: 'Jalan Kiara 3, Kiara Condo', unit: 'A-12-3', postcode: '50480' });
-  await expect(page.locator('[data-test=hint]')).toHaveText('Enter the contact person');
+  // KF hand test (E8-6): everything missing is listed at once.
+  await expect(page.locator('[data-test=hint]')).toHaveText(['• Enter the contact person', '• Contact phone: a Malaysian mobile number']);
   await expect(page.locator('[data-test=save]')).toHaveAttribute('disabled', /.*/);
   await page.locator('[data-test=contact-name] input').fill('Tan Mei Ling');
   await page.locator('[data-test=contact-phone] input').fill('12345');
-  await expect(page.locator('[data-test=hint]')).toHaveText('Contact phone: a Malaysian mobile number');
+  await expect(page.locator('[data-test=hint]')).toHaveText(['• Contact phone: a Malaysian mobile number']);
   await page.locator('[data-test=contact-phone] input').fill('012-345 6789');
   await expect(page.locator('[data-test=save]')).not.toHaveAttribute('disabled', /.*/);
   await page.locator('[data-test=save]').click();

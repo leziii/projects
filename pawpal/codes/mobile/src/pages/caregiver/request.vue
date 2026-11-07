@@ -31,6 +31,16 @@
       <text v-for="p in r.petList" :key="p.name" class="line" data-test="detail-pet">{{ p.name }} · {{ p.kind === 'dog' ? 'Dog' : 'Cat' }}</text>
     </view>
 
+    <view v-if="review" class="card" data-test="request-review">
+      <text class="section">Owner's review</text>
+      <ReviewItem :review="review" />
+      <template v-if="!review.reply">
+        <textarea v-model="reply" class="box" data-test="reply" :maxlength="REVIEW_RULES.replyMax" placeholder="Say thanks or answer the owner. You can reply once." />
+        <text class="note right">{{ reply.length }} / {{ REVIEW_RULES.replyMax }}</text>
+        <button class="primary" data-test="send-reply" :disabled="busy || !reply.trim()" @click="sendReply">Send reply</button>
+      </template>
+    </view>
+
     <!-- Stays after the page reloads, so the caregiver sees why the request closed (R28-6). -->
     <text v-if="error" class="error" data-test="error">{{ error }}</text>
     <template v-if="r.open">
@@ -57,9 +67,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
-import { REJECT_REASONS, REQUEST_END_LABEL, REQUEST_RULES, formatRM, type RejectReason, type RequestDetail } from '@pawpal/shared';
+import { REJECT_REASONS, REQUEST_END_LABEL, REQUEST_RULES, REVIEW_RULES, formatRM, type RejectReason, type RequestDetail, type Review } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
-import { acceptRequest, getRequest, rejectRequest } from '@/api/requests';
+import { acceptRequest, getRequest, getRequestReview, rejectRequest, replyReview } from '@/api/requests';
+import ReviewItem from '@/components/ReviewItem.vue';
 import { anyExpired, leftText, requestUrl, tagText } from '@/requests';
 import { copyText } from '@/copy';
 
@@ -68,6 +79,9 @@ const error = ref('');
 const busy = ref(false);
 const saying = ref(false);
 const reason = ref<RejectReason | ''>('');
+/** R41-5: the owner's review of this order, once there is one. */
+const review = ref<Review | null>(null);
+const reply = ref('');
 const endText = computed(() => {
   if (r.value?.end === 'accepted') return 'You accepted this order. The visits are in your schedule.';
   if (r.value?.end === 'rejected') return 'You said no. The owner gets a full refund.';
@@ -81,6 +95,7 @@ async function load() {
   try {
     r.value = await getRequest(id);
     now.value = new Date();
+    if (r.value.end === 'accepted') review.value = (await getRequestReview(id).catch(() => null))?.review ?? null;
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -96,6 +111,20 @@ async function act(run: () => Promise<RequestDetail>, done: string) {
     error.value = (e as Error).message;
     // Closed meanwhile (deadline or owner): show the latest state.
     if (/no longer open|withdrew/.test(error.value)) await load();
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function sendReply() {
+  error.value = '';
+  busy.value = true;
+  try {
+    review.value = (await replyReview(id, reply.value)).review;
+    reply.value = '';
+    uni.showToast({ title: 'Reply sent', icon: 'success' });
+  } catch (e) {
+    error.value = (e as Error).message;
   } finally {
     busy.value = false;
   }
@@ -145,5 +174,7 @@ onUnload(() => clearInterval(timer));
 .reasons { display: flex; flex-wrap: wrap; gap: 16rpx; margin-top: 16rpx; }
 .chip { padding: 12rpx 24rpx; border: 1px solid var(--pp-border); border-radius: 999rpx; font-size: 26rpx; }
 .chip.on { border-color: var(--pp-primary-strong); color: var(--pp-primary-strong); font-weight: 600; }
+.box { width: 100%; height: 180rpx; margin-top: 16rpx; padding: 16rpx; box-sizing: border-box; border: 1px solid var(--pp-border); border-radius: 12rpx; font-size: 28rpx; }
+.right { text-align: right; }
 .fix { display: block; margin-top: 16rpx; text-align: center; color: var(--pp-primary-strong); }
 </style>

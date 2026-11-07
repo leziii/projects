@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
-import type { BookingDraft, OrderDetail, OrderPage, OrderView, User } from '@pawpal/shared';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
+import type { BookingDraft, OrderDetail, OrderPage, OrderView, User, VisitReport } from '@pawpal/shared';
 import { AuthGuard, CurrentUser } from '../auth/auth.guard';
 import { BookingsService, type Checkout } from './bookings.service';
 import { OrdersService } from './orders.service';
@@ -75,6 +76,31 @@ export class OrdersController {
   @HttpCode(200)
   confirmEntry(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number, @Param('i', ParseIntPipe) i: number): Promise<OrderDetail> {
     return this.orders.confirmEntry(user, id, i);
+  }
+
+  /** E9-1 O17: the visit's sent report (R39-2). */
+  @Get('orders/:id/visits/:i/report')
+  report(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number, @Param('i', ParseIntPipe) i: number): Promise<VisitReport> {
+    return this.orders.report(user, id, i);
+  }
+
+  /** E9-1: the report from a message link, by its run id (R39-1). */
+  @Get('reports/:runId')
+  reportByRun(@CurrentUser() user: User, @Param('runId', ParseIntPipe) runId: number): Promise<VisitReport> {
+    return this.orders.reportByRun(user, runId);
+  }
+
+  /** E9-1: a report photo, private to the order's owner here (R39-4). */
+  @Get('orders/:id/visits/:i/photos/:photoId')
+  async photo(
+    @CurrentUser() user: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('i', ParseIntPipe) i: number,
+    @Param('photoId', ParseIntPipe) photoId: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { data, mime } = await this.orders.reportPhoto(user, id, i, photoId);
+    res.set({ 'content-type': mime, 'cache-control': 'private, no-store' }).send(data);
   }
 
   /** E6-5 "Book again": the old order becomes the draft (R29-1 … R29-6). */

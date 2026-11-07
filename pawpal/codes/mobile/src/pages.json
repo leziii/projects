@@ -106,6 +106,25 @@
 			}
 		},
 		{
+			"path": "pages/orders/report",
+			"style": {
+				"navigationBarTitleText": "Service report",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/orders/review",
+			"style": {
+				"navigationBarTitleText": "Rate your caregiver"
+			}
+		},
+		{
+			"path": "pages/orders/problem",
+			"style": {
+				"navigationBarTitleText": "Raise a problem"
+			}
+		},
+		{
 			"path": "pages/caregiver/tasks",
 			"style": {
 				"navigationBarTitleText": "My tasks",

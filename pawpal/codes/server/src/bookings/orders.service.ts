@@ -31,12 +31,14 @@ import {
   type PaymentMethod,
   type PetKind,
   type User,
+  type VisitReport,
   NOT_STARTED,
 } from '@pawpal/shared';
 import type { PoolClient } from 'pg';
 import { AddressesService } from '../addresses/addresses.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { DbService, ts } from '../db/db.service';
+import { FileStore, IMAGE_MIME } from '../files/file-store';
 import { HistoryService } from '../history/history.service';
 import { MessagesService } from '../messages/messages.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -44,6 +46,7 @@ import { PromosService } from '../promos/promos.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { ScheduleService } from '../caregivers/schedule.service';
 import { BookingsService } from './bookings.service';
+import { ReviewsService } from './reviews.service';
 import { VisitRunsService, runKey } from './visit-runs.service';
 
 interface OrderRow {
@@ -97,6 +100,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     private readonly schedules: ScheduleService,
     private readonly addresses: AddressesService,
     private readonly runs: VisitRunsService,
+    private readonly files: FileStore,
+    private readonly reviews: ReviewsService,
   ) {}
 
   onModuleInit() {
@@ -267,6 +272,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       refundDoneSen: done.rows[0].sen,
       address: address && area ? { ...address, area } : null,
       runs: view.visits.map((_, i) => runs.get(runKey(id, i)) ?? NOT_STARTED),
+      review: await this.reviews.stateOf(id),
     };
   }
 
@@ -558,6 +564,43 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       acceptDeadline: r.deadline,
     }));
     return { rows: page, next: rows.length > size ? page[page.length - 1].id : null };
+  }
+
+  /** E9-1 O17 (R39-2, R39-4): one visit's sent report, for the order's owner only. */
+  async report(user: User, id: number, index: number): Promise<VisitReport> {
+    const o = await this.own(user, id);
+    const v = o.status === 'accepted' && Number.isInteger(index) ? o.visits[index] : undefined;
+    if (!v) throw new NotFoundException({ code: 'VISIT_NOT_FOUND', message: 'Visit not found' });
+    const run = await this.runs.of(id, index);
+    if ((run.status !== 'report_sent' && run.status !== 'confirmed' && run.status !== 'disputed') || !run.reportedAt) throw new ConflictException({ code: 'REPORT_NOT_READY', message: 'The caregiver has not sent the report yet' });
+    return {
+      orderId: id,
+      number: o.number,
+      index,
+      date: v.date,
+      start: v.start,
+      caregiver: await this.caregiverName(o.caregiver_id),
+      reportedAt: run.reportedAt,
+      ...(await this.runs.service(id, index, o.pets)),
+      status: run.status,
+      confirmedAt: run.confirmedAt,
+      confirmedBy: run.confirmedBy,
+    };
+  }
+
+  /** R39-1: the message link carries the run id. */
+  async reportByRun(user: User, runId: number): Promise<VisitReport> {
+    const at = await this.runs.visitOf(runId);
+    if (!at) throw new NotFoundException({ code: 'VISIT_NOT_FOUND', message: 'Visit not found' });
+    return this.report(user, at.orderId, at.idx);
+  }
+
+  /** R39-4: a report photo, for the order's owner once the report is sent. */
+  async reportPhoto(user: User, id: number, index: number, photoId: number): Promise<{ data: Buffer; mime: string }> {
+    await this.report(user, id, index);
+    const key = await this.runs.photoKey(id, index, photoId);
+    if (!key) throw new NotFoundException({ code: 'PHOTO_NOT_FOUND', message: 'Photo not found' });
+    return { data: await this.files.read(key), mime: IMAGE_MIME[key.split('.').pop() as 'jpg' | 'png'] };
   }
 
   private async own(user: User, id: number): Promise<OrderRow> {

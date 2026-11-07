@@ -3,6 +3,7 @@
  */
 import type { Area } from './addresses';
 import type { DogSize } from './caregivers';
+import type { Rating } from './reviews';
 import { RuleError } from './rules';
 
 export const ID_VERIFIED_LABEL = 'ID verified';
@@ -45,6 +46,8 @@ export interface CaregiverCard {
   certChecked: boolean;
   /** The note when insurance is on, otherwise null. */
   insurance: string | null;
+  /** E9-3 (R41-4): average of visible reviews. */
+  rating: Rating;
 }
 
 /** "Siti A." → "SA", "Kumar" → "K". */

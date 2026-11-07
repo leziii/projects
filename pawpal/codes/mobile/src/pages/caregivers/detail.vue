@@ -8,6 +8,7 @@
       <view v-else class="photo initials" data-test="card-initials"><text>{{ card.initials }}</text></view>
       <view class="who">
         <text class="name" data-test="card-name">{{ card.displayName }}</text>
+        <text class="rating" data-test="card-rating">{{ ratingText(card.rating) }}</text>
         <view class="badges">
           <text v-for="b in list" :key="b.key" class="badge" :data-test="`badge-${b.key}`" @click="info = info === b.info ? '' : b.info">✓ {{ b.label }}</text>
         </view>
@@ -28,6 +29,12 @@
       <text class="muted">{{ card.insurance }}</text>
     </view>
 
+    <view class="card" data-test="reviews">
+      <text class="strong">Reviews</text>
+      <ReviewItem v-for="r in reviews" :key="r.id" :review="r" />
+      <text v-if="!reviews.length" class="muted" data-test="no-reviews">No reviews yet.</text>
+    </view>
+
     <view v-if="option" class="card" data-test="booking-box">
       <text class="strong">Your visits</text>
       <text class="availability" :class="{ clash: !option.free }" data-test="card-availability">{{ option.availability }}</text>
@@ -46,10 +53,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onLoad, onUnload } from '@dcloudio/uni-app';
-import type { CaregiverCard, CaregiverOption } from '@pawpal/shared';
+import { ratingText, type CaregiverCard, type CaregiverOption, type Review } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { chooseCaregiver, listCaregivers } from '@/api/booking';
-import { caregiverPhotoUrl, getCaregiverCard } from '@/api/caregivers';
+import { caregiverPhotoUrl, getCaregiverCard, getCaregiverReviews } from '@/api/caregivers';
+import ReviewItem from '@/components/ReviewItem.vue';
 import { badges, cardRows } from '@/trust';
 
 const card = ref<CaregiverCard | null>(null);
@@ -59,6 +67,8 @@ const info = ref('');
 const preview = ref(false);
 /** Opened from the O07 list: how this booking's visits look for her, and "Choose" (R19-4). */
 const option = ref<CaregiverOption | null>(null);
+/** R41-4: the newest 5 visible reviews. */
+const reviews = ref<Review[]>([]);
 const freeNote = ref('');
 const busy = ref(false);
 const error = ref('');
@@ -77,6 +87,7 @@ onLoad(async (q) => {
     gone.value = true;
     return;
   }
+  reviews.value = (await getCaregiverReviews(id).catch(() => null))?.reviews ?? [];
   if (card.value.hasPhoto) photo.value = await caregiverPhotoUrl(id).catch(() => '');
   if (q?.booking === '1') {
     const list = await listCaregivers().catch(() => null);
@@ -114,6 +125,7 @@ onUnload(() => photo.value && URL.revokeObjectURL(photo.value));
 .name { font-size: 36rpx; font-weight: 700; }
 .badges { display: flex; flex-wrap: wrap; gap: 12rpx; }
 .badge { padding: 6rpx 18rpx; border-radius: 999rpx; background: var(--pp-primary-strong); color: var(--pp-surface); font-size: 24rpx; font-weight: 600; }
+.rating { font-size: 26rpx; font-weight: 600; color: var(--pp-ink); }
 .info { font-size: 24rpx; color: var(--pp-muted); }
 .row { display: flex; justify-content: space-between; gap: 24rpx; font-size: 28rpx; }
 .value { text-align: right; font-weight: 600; }

@@ -40,5 +40,6 @@ export function linkPage(latest: Pick<LinkState, 'type' | 'id' | 'gone'> | null)
   if (latest.type === 'pet') return `/pages/pets/status?id=${latest.id}`;
   if (latest.type === 'order') return `/pages/orders/detail?id=${latest.id}`;
   if (latest.type === 'request') return `/pages/caregiver/request?id=${latest.id}`;
+  if (latest.type === 'report') return `/pages/orders/report?run=${latest.id}`;
   return latest.type === 'caregiver_application' ? '/pages/apply/status' : null;
 }

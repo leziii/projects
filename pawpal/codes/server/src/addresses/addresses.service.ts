@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ADDRESS_RULES, checkAddress, type Address, type AddressFields, type AddressInput, type User, type VisitAddress } from '@pawpal/shared';
+import { ADDRESS_RULES, checkAddress, type Address, type AddressFields, type AddressInput, type GeoPoint, type User, type VisitAddress } from '@pawpal/shared';
 import type { PoolClient } from 'pg';
 import { DbService, ts } from '../db/db.service';
 import { SecretBox } from '../files/secret-box';
@@ -13,7 +13,7 @@ interface AddressRow {
   updated: string;
 }
 
-type Secret = Pick<AddressFields, 'street' | 'unit' | 'postcode' | 'contactName' | 'contactPhone' | 'emergencyName' | 'emergencyPhone'>;
+type Secret = Pick<AddressFields, 'street' | 'unit' | 'postcode' | 'contactName' | 'contactPhone' | 'emergencyName' | 'emergencyPhone' | 'home'>;
 
 const SELECT = `SELECT id, label, area, secret, is_default, ${ts('updated_at')} AS updated FROM addresses`;
 
@@ -55,7 +55,9 @@ export class AddressesService {
 
   async update(user: User, id: number, input: Partial<AddressInput>): Promise<Address> {
     const a = checkAddress(input);
-    await this.row(user, id);
+    const old = await this.toAddress(await this.row(user, id));
+    // R38-2: an edit that does not mention the home position keeps it.
+    if (input.home === undefined) a.home = old.home;
     await this.db.pool.query('UPDATE addresses SET label = $2, area = $3, secret = $4, updated_at = now() WHERE id = $1', [id, a.label, a.area, await this.seal(a)]);
     return this.get(user, id);
   }
@@ -88,7 +90,7 @@ export class AddressesService {
 
   private async toAddress(r: AddressRow): Promise<Address> {
     const s = JSON.parse(await this.secrets.open(r.secret)) as Secret;
-    return { id: r.id, label: r.label, area: r.area, ...s, isDefault: r.is_default, updatedAt: r.updated };
+    return { id: r.id, label: r.label, area: r.area, ...s, home: s.home ?? null, isDefault: r.is_default, updatedAt: r.updated };
   }
 
   private async seal(a: AddressFields): Promise<string> {
@@ -100,6 +102,7 @@ export class AddressesService {
       contactPhone: a.contactPhone,
       emergencyName: a.emergencyName,
       emergencyPhone: a.emergencyPhone,
+      home: a.home,
     };
     return this.secrets.seal(JSON.stringify(secret));
   }
@@ -110,6 +113,13 @@ export class AddressesService {
     if (!rows[0]) return null;
     const s = JSON.parse(await this.secrets.open(rows[0].secret)) as Secret;
     return { street: s.street, unit: s.unit, postcode: s.postcode, contactName: s.contactName, contactPhone: s.contactPhone };
+  }
+
+  /** R38-2: the home position the owner set, for the location check only (never shown to the caregiver). */
+  async homeOf(id: number): Promise<GeoPoint | null> {
+    const { rows } = await this.db.pool.query<{ secret: string }>('SELECT secret FROM addresses WHERE id = $1', [id]);
+    if (!rows[0]) return null;
+    return (JSON.parse(await this.secrets.open(rows[0].secret)) as Secret).home ?? null;
   }
 
   /** Someone else's address looks the same as a missing one. */

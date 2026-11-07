@@ -6,11 +6,15 @@ import { PromosModule } from '../promos/promos.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { AdminCasesController, CasesController, CasesDevController } from './cases.controller';
+import { CasesService } from './cases.service';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
-import { RequestsController, RequestsDevController } from './requests.controller';
+import { LocationFlagsController, RequestsController, RequestsDevController } from './requests.controller';
 import { RequestsService } from './requests.service';
+import { AdminReviewsController, ReviewsController } from './reviews.controller';
+import { ReviewsService } from './reviews.service';
 import { VisitRunsService } from './visit-runs.service';
 
-@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController], providers: [BookingsService, OrdersService, RequestsService, VisitRunsService] })
+@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController, LocationFlagsController, CasesController, AdminCasesController, CasesDevController, ReviewsController, AdminReviewsController], providers: [ReviewsService, BookingsService, OrdersService, RequestsService, VisitRunsService, CasesService] })
 export class BookingsModule {}

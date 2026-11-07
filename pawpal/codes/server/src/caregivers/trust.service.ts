@@ -34,8 +34,10 @@ export class TrustService {
   /** Cards of approved caregivers (all, or these ids), with each one's overtime limit for matching (E5-2). */
   async approvedCards(ids?: number[]): Promise<(CaregiverCard & { overtimeMaxMin: number })[]> {
     await this.profiles.ensureApproved();
-    const { rows } = await this.db.pool.query<ProfileRow & { overtime_max_min: number; id_checked: boolean; cert_checked: boolean }>(
-      `SELECT p.*, COALESCE(a.id_checked, false) AS id_checked, COALESCE(a.cert_checked, false) AS cert_checked
+    const { rows } = await this.db.pool.query<ProfileRow & { overtime_max_min: number; id_checked: boolean; cert_checked: boolean; avg: string | null; count: number }>(
+      `SELECT p.*, COALESCE(a.id_checked, false) AS id_checked, COALESCE(a.cert_checked, false) AS cert_checked,
+         (SELECT round(avg(r.stars), 1) FROM reviews r WHERE r.caregiver_id = u.id AND r.hidden_at IS NULL) AS avg,
+         (SELECT count(*)::int FROM reviews r WHERE r.caregiver_id = u.id AND r.hidden_at IS NULL) AS count
        FROM users u JOIN caregiver_profiles p ON p.user_id = u.id LEFT JOIN caregiver_applications a ON a.user_id = u.id
        WHERE u.caregiver_status = 'approved' AND ($1::bigint[] IS NULL OR u.id = ANY ($1)) ORDER BY u.id`,
       [ids ?? null],
@@ -57,6 +59,8 @@ export class TrustService {
         idVerified: p.id_checked,
         certChecked: p.cert_checked,
         insurance: insurance.on ? insurance.note : null,
+        // R41-4: hidden reviews do not count.
+        rating: { avg: p.avg === null ? null : Number(p.avg), count: p.count },
         overtimeMaxMin: p.overtime_max_min,
       };
     });

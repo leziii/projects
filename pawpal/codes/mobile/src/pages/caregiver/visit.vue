@@ -46,9 +46,10 @@
     </view>
 
     <view v-if="v.status === 'todo'" class="actions">
-      <button class="primary" data-test="arrive" :disabled="busy || !canArrive(v, now)" @click="arrive">I've arrived</button>
+      <button class="primary" data-test="arrive" :disabled="busy || !canArrive(v, now)" @click="arrive">{{ busy ? 'Getting your location…' : "I've arrived" }}</button>
       <text v-if="!canArrive(v, now)" class="note center" data-test="arrive-note">{{ arriveFromText(v) }}</text>
       <text v-else class="note center" data-test="arrive-note">Tap when you reach the door. Waiting outside is not service time.</text>
+      <text v-if="canArrive(v, now)" class="note center" data-test="location-notice">📍 {{ v.locationNotice }}</text>
     </view>
 
     <view v-else-if="v.status === 'arrived'" class="card" data-test="entry-step">
@@ -68,6 +69,15 @@
       <text class="strong" data-test="entered-at">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
       <button class="primary" data-test="continue-service" @click="openService">Continue service</button>
     </view>
+
+    <view v-else-if="v.status === 'report_sent' || v.status === 'confirmed' || v.status === 'disputed'" class="card" data-test="report-sent">
+      <text class="strong">{{ arrivedText(v.arrivedAt!) }}</text>
+      <text class="strong">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
+      <text class="strong" data-test="sent-at">{{ sentText(v.reportedAt!, now) }}</text>
+      <text v-if="v.status === 'confirmed'" class="ok" data-test="confirmed-at">✓ {{ confirmedText(v.confirmedAt!, v.confirmedBy!, 'caregiver') }}</text>
+      <text v-else-if="v.status === 'disputed'" class="warn" data-test="disputed">The owner raised a problem. Our team is reviewing it and may contact you.</text>
+      <text class="note">{{ v.photos.length }} photos sent. The report is locked; contact support to change it.</text>
+    </view>
     <text v-if="actionError" class="error" data-test="action-error">{{ actionError }}</text>
 
     <view v-if="v.status !== 'cancelled'" class="card"><HelpButton :order-no="v.number" label="Problem getting in?" /></view>
@@ -83,12 +93,14 @@ import { onHide, onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/u
 import {
   ENTRY_METHOD_LABEL,
   TASK_STATUS_LABEL,
+  confirmedText,
   ageText,
   arriveFromText,
   arrivedText,
   canArrive,
   dayText,
   enteredText,
+  sentText,
   entryLockedText,
   formatRM,
   taskTime,
@@ -100,6 +112,7 @@ import { requireUser } from '@/api/auth';
 import { arriveVisit, enterVisit, getVisit } from '@/api/requests';
 import HelpButton from '@/components/HelpButton.vue';
 import { copyText } from '@/copy';
+import { currentLocation } from '@/location';
 
 const v = ref<VisitTask | null>(null);
 const error = ref('');
@@ -156,7 +169,7 @@ async function act(run: () => Promise<VisitTask>) {
 }
 
 /** R35-2 */
-const arrive = () => act(() => arriveVisit(id, index));
+const arrive = () => act(async () => arriveVisit(id, index, await currentLocation()));
 /** R35-3, R36-1: once in, the service page opens. */
 async function enter() {
   await act(() => enterVisit(id, index));
@@ -203,6 +216,9 @@ function call() {
 .strong { font-weight: 600; }
 .line { font-size: 28rpx; }
 .note { font-size: 26rpx; color: var(--pp-muted); }
+.ok { color: var(--pp-primary-strong); font-weight: 600; font-size: 28rpx; }
+.warn { color: var(--pp-danger); font-weight: 600; font-size: 28rpx; }
+.tag.disputed { background: var(--pp-danger); color: var(--pp-surface); }
 .center { text-align: center; }
 .income { font-weight: 600; color: var(--pp-primary-strong); }
 .pet { display: flex; flex-direction: column; gap: 4rpx; padding: 8rpx 0; }
@@ -213,7 +229,7 @@ function call() {
 .tick { display: flex; align-items: center; gap: 16rpx; font-size: 28rpx; padding: 8rpx 0; }
 .box { width: 40rpx; height: 40rpx; border: 2px solid var(--pp-primary-strong); border-radius: 8rpx; display: flex; align-items: center; justify-content: center; color: var(--pp-surface); font-size: 26rpx; flex: none; }
 .box.on { background: var(--pp-primary-strong); }
-.tag.arrived, .tag.in_service { background: var(--pp-primary-strong); color: var(--pp-surface); }
+.tag.arrived, .tag.in_service, .tag.report_sent, .tag.confirmed { background: var(--pp-primary-strong); color: var(--pp-surface); }
 .primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
 .error { color: var(--pp-danger); }

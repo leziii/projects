@@ -23,10 +23,13 @@ export * from './referrals';
 export * from './requests';
 export * from './order-list';
 export * from './tasks';
+export * from './location';
 export * from './service';
+export * from './cases';
+export * from './reviews';
 
 export const APP_NAME = 'PawPal';
-export const SHARED_VERSION = '0.38.0';
+export const SHARED_VERSION = '0.44.0';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
