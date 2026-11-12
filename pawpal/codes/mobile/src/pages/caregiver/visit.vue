@@ -62,11 +62,17 @@
         <button class="primary" data-test="confirm-entry" :disabled="busy || !entered" @click="enter">Confirm entry</button>
       </template>
       <text v-else class="note" data-test="waiting-owner">Waiting for the owner to confirm</text>
+      <view v-if="v.waitingAt" class="row" data-test="waiting-row">
+        <text class="strong" data-test="waiting-line">{{ waitingText(waitingState(v, now)) }}</text>
+        <text class="link" data-test="waiting-details" @click="openWaiting">Details ›</text>
+      </view>
+      <button v-else class="ghost" data-test="ask-wait" :disabled="busy" @click="askWait">Owner asked me to wait</button>
     </view>
 
     <view v-else-if="v.status === 'in_service'" class="card" data-test="in-service">
       <text class="strong">{{ arrivedText(v.arrivedAt!) }}</text>
       <text class="strong" data-test="entered-at">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
+      <text v-if="v.waitingAt" class="note" data-test="waited-line">{{ waitingText(waitingState(v, now)) }}</text>
       <button class="primary" data-test="continue-service" @click="openService">Continue service</button>
     </view>
 
@@ -97,6 +103,9 @@ import {
   ageText,
   arriveFromText,
   arrivedText,
+  WAITING_RULE_TEXT,
+  waitingState,
+  waitingText,
   canArrive,
   dayText,
   enteredText,
@@ -109,7 +118,8 @@ import {
   type VisitTask,
 } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
-import { arriveVisit, enterVisit, getVisit } from '@/api/requests';
+import { arriveVisit, enterVisit, getVisit, waitVisit } from '@/api/requests';
+import { confirmBox } from '@/order-actions';
 import HelpButton from '@/components/HelpButton.vue';
 import { copyText } from '@/copy';
 import { currentLocation } from '@/location';
@@ -176,6 +186,14 @@ async function enter() {
   if (v.value?.status === 'in_service') openService();
 }
 
+/** R45-1: the owner is told; S14 shows the clock. */
+async function askWait() {
+  if (!(await confirmBox('Owner asked me to wait', `We will tell the owner. ${WAITING_RULE_TEXT} Waiting stops when you get in.`))) return;
+  await act(() => waitVisit(id, index));
+  if (v.value?.waitingAt) openWaiting();
+}
+const openWaiting = () => uni.navigateTo({ url: `/pages/caregiver/waiting?id=${id}&i=${index}` });
+
 function openService() {
   uni.navigateTo({ url: `/pages/caregiver/service?id=${id}&i=${index}` });
 }
@@ -233,4 +251,5 @@ function call() {
 .primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
 .error { color: var(--pp-danger); }
+.ghost { width: 100%; background: var(--pp-surface); color: var(--pp-primary-strong); border: 1px solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-weight: 600; margin-top: 8rpx; }
 </style>

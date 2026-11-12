@@ -37,10 +37,15 @@ import {
   type VisitRun,
   type VisitTask,
   type User,
+  WAITING_RULE_TEXT,
+  type OvertimeRequest,
+  waitingStart,
+  timeText,
 } from '@pawpal/shared';
 import type { PoolClient } from 'pg';
 import { AddressesService } from '../addresses/addresses.service';
 import { DbService, ts } from '../db/db.service';
+import { ExtraFeesService } from './extra-fees.service';
 import { FileStore, IMAGE_MIME, imageType } from '../files/file-store';
 import { SecretBox } from '../files/secret-box';
 import { HistoryService } from '../history/history.service';
@@ -90,6 +95,7 @@ export class RequestsService {
     private readonly runs: VisitRunsService,
     private readonly messages: MessagesService,
     private readonly files: FileStore,
+    private readonly fees: ExtraFeesService,
   ) {}
 
   async list(user: User): Promise<RequestList> {
@@ -138,7 +144,7 @@ export class RequestsService {
     const day = typeof date === 'string' && dates.includes(date) ? date : dates[0];
     const { rows } = await this.db.pool.query<{ id: number; number: string; pets: Task['pets']; visits: OrderVisit[]; area: string }>(
       `SELECT o.id, o.number, o.pets, o.visits, a.area FROM orders o JOIN addresses a ON a.id = o.address_id
-       WHERE o.caregiver_id = $1 AND o.status = 'accepted' AND EXISTS (SELECT 1 FROM jsonb_array_elements(o.visits) v WHERE v->>'date' BETWEEN $2 AND $3)`,
+       WHERE o.caregiver_id = $1 AND (o.status = 'accepted' OR o.end_reason = 'cancelled') AND EXISTS (SELECT 1 FROM jsonb_array_elements(o.visits) v WHERE v->>'date' BETWEEN $2 AND $3)`,
       [user.id, dates[0], dates[dates.length - 1]],
     );
     const runs = await this.runs.forOrders(rows.map((o) => Number(o.id)));
@@ -162,7 +168,7 @@ export class RequestsService {
       address_id: number; area: string; entry_method: EntryMethod; entry_secret: string | null;
     }>(
       `SELECT o.id, o.number, o.status, o.level, o.pets, o.visits, o.address_id, a.area, o.entry_method, o.entry_secret
-       FROM orders o JOIN addresses a ON a.id = o.address_id WHERE o.id = $1 AND o.caregiver_id = $2 AND o.status = 'accepted'`,
+       FROM orders o JOIN addresses a ON a.id = o.address_id WHERE o.id = $1 AND o.caregiver_id = $2 AND (o.status = 'accepted' OR o.end_reason = 'cancelled')`,
       [orderId, user.id],
     );
     const o = rows[0];
@@ -199,6 +205,7 @@ export class RequestsService {
       entryFrom: entryFromOf(task),
       ...(await this.runs.service(Number(o.id), index, o.pets)),
       locationNotice: LOCATION_NOTICE,
+      overtime: await this.openOvertime(Number(o.id), index),
     };
   }
 
@@ -318,7 +325,7 @@ export class RequestsService {
   async arrive(user: User, orderId: number, index: number, location: unknown = null, now = new Date()): Promise<VisitTask> {
     const v = await this.visit(user, orderId, index, now);
     if (!canArrive(v, now)) {
-      throw new ConflictException({ code: 'CANNOT_ARRIVE', message: v.status === 'todo' ? `You can tap this ${arriveFromText(v).toLowerCase()}` : 'Arrival is already recorded' });
+      throw new ConflictException({ code: 'CANNOT_ARRIVE', message: v.status === 'todo' ? `You can tap this ${arriveFromText(v).toLowerCase()}` : v.status === 'cancelled' ? 'This visit was cancelled' : 'Arrival is already recorded' });
     }
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query("INSERT INTO visit_runs (order_id, idx, status, arrived_at) VALUES ($1, $2, 'arrived', now()) ON CONFLICT DO NOTHING", [orderId, index]);
@@ -356,8 +363,57 @@ export class RequestsService {
       );
       if (!rowCount) throw new ConflictException({ code: 'NOT_ARRIVED', message: v.status === 'todo' ? 'Tap "I\'ve arrived" first' : 'Entry is already confirmed' });
       await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'arrived', to: 'in_service', actor: { type: 'caregiver', id: String(user.id) }, reason: `Entry confirmed for visit ${index + 1}` });
+      await this.fees.afterEntry(client, orderId, index);
     });
     return this.visit(user, orderId, index, now);
+  }
+
+  /**
+   * E11-1 S10 → S14 (R45-1 … R45-5): the owner asked the caregiver to wait. Recorded once, after arriving and before entry;
+   * the owner is told the fee rule. Approve and pay come with E11-3.
+   */
+  async requestWaiting(user: User, orderId: number, index: number, now = new Date()): Promise<VisitTask> {
+    const v = await this.visit(user, orderId, index, now);
+    await this.db.tx(async (client) => {
+      const { rowCount } = await client.query(
+        "UPDATE visit_runs SET waiting_requested_at = now(), updated_at = now() WHERE order_id = $1 AND idx = $2 AND status = 'arrived' AND waiting_requested_at IS NULL",
+        [orderId, index],
+      );
+      if (!rowCount) {
+        const message = v.status === 'todo' ? 'Tap "I\'ve arrived" first' : v.status === 'cancelled' ? 'This visit was cancelled' : v.waitingAt ? 'Waiting is already requested' : 'You are already in';
+        throw new ConflictException({ code: 'CANNOT_WAIT', message });
+      }
+      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'arrived', to: 'arrived', actor: { type: 'caregiver', id: String(user.id) }, reason: `Owner asked to wait for visit ${index + 1}` });
+      // E11-3 (R47-3): the owner can prepay it.
+      await this.fees.addWaiting(client, orderId, index);
+      const { rows } = await client.query<{ owner_id: number; display_name: string }>(
+        'SELECT o.owner_id, c.display_name FROM orders o JOIN caregiver_profiles c ON c.user_id = o.caregiver_id WHERE o.id = $1',
+        [orderId],
+      );
+      const name = shortName(rows[0].display_name);
+      const from = waitingStart(v, v.arrivedAt!);
+      const kl = new Date(from.getTime() + 8 * 3600_000);
+      await this.messages.send(client, {
+        userId: rows[0].owner_id,
+        role: 'owner',
+        category: 'order',
+        title: `${name} is waiting for you`,
+        body: `${name} is waiting at the door from ${timeText(kl.getUTCHours() * 60 + kl.getUTCMinutes())}. ${WAITING_RULE_TEXT} Waiting stops when you let them in.`,
+        link: { type: 'order', id: orderId },
+      });
+    });
+    return this.visit(user, orderId, index, now);
+  }
+
+  /** E11-2 (R46-5): the open overtime request of a visit, or the paid one (E11-3). */
+  async openOvertime(orderId: number, index: number): Promise<OvertimeRequest | null> {
+    await this.fees.lapseDue(orderId);
+    const { rows } = await this.db.pool.query<{ id: string; units: number; amount_sen: number; status: OvertimeRequest['status']; at: string }>(
+      `SELECT id, units, amount_sen, status, ${ts('requested_at')} AS at FROM extra_fees WHERE order_id = $1 AND idx = $2 AND kind = 'overtime' AND status IN ('requested', 'paid') ORDER BY id DESC LIMIT 1`,
+      [orderId, index],
+    );
+    const r = rows[0];
+    return r ? { id: Number(r.id), units: r.units, amountSen: r.amount_sen, status: r.status, requestedAt: r.at } : null;
   }
 
   /** Dev tool (R35-7): a visit of an order starts in 10 minutes. */
@@ -416,7 +472,7 @@ const card = (r: Row): RequestCard => {
 
 /** Why it is no longer open: accepted or said no (E6-2), withdrawn (E6-4), otherwise the time ran out. */
 function endOf(r: Row): RequestEnd {
-  if (r.status === 'cancelled') return 'withdrawn';
+  if (r.status === 'cancelled') return r.end_reason === 'cancelled' ? 'accepted' : 'withdrawn';
   if (r.status === 'accepted') return 'accepted';
   if (r.end_reason === 'rejected') return 'rejected';
   return 'expired';

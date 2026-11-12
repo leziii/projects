@@ -60,8 +60,8 @@ test('service page: timer, checklist saved per tick, photos added and deleted, f
   await expect(page.locator('[data-test=photo-count]')).toHaveText('2 of 9 photos');
   await expect(page.locator('[data-test=finish-wait]')).toHaveCount(0);
 
-  // R36-6: later buttons are greyed.
-  await expect(page.locator('[data-test=overtime]')).toHaveAttribute('disabled', 'true');
+  // R36-6: Report a problem is still greyed; overtime works since E11-2 (R46-1).
+  await expect(page.locator('[data-test=overtime]')).not.toHaveAttribute('disabled', 'true');
   await expect(page.locator('[data-test=problem]')).toHaveAttribute('disabled', 'true');
 
   // R36-5: under the minimum, finishing asks first; Cancel stays, OK opens the report placeholder.

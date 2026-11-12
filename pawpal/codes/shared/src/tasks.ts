@@ -2,6 +2,7 @@
  * E8-1 "My tasks" (S08, R33-1 … R33-6): the caregiver's visits of accepted orders, day by day.
  */
 import type { CheckRow } from './service';
+import type { OvertimeRequest } from './overtime';
 import { visitTime, type EntryMethod } from './booking';
 import { addDays, dayText, klDate, timeText } from './schedule';
 import type { PetKind, ServiceLevel } from './rules';
@@ -34,9 +35,13 @@ export interface VisitRun {
   /** R40-1, R40-2: when and how the visit was confirmed. */
   confirmedAt: string | null;
   confirmedBy: 'owner' | 'auto' | null;
+  /** R42-3: when the owner cancelled it and what came back. */
+  cancel: { at: string; percent: number; refundSen: number; creditSen: number } | null;
+  /** E11-1 (R45-1): when the caregiver asked the owner to wait; null when not asked. */
+  waitingAt: string | null;
 }
 
-export const NOT_STARTED: VisitRun = { status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null };
+export const NOT_STARTED: VisitRun = { status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null, cancel: null, waitingAt: null };
 
 /** R35-2: "I've arrived" works from 30 min before the planned start. */
 export const VISIT_RULES = { arriveFromMin: 30 } as const;
@@ -60,6 +65,7 @@ export interface Task {
   locationRecorded: boolean;
   confirmedAt: string | null;
   confirmedBy: 'owner' | 'auto' | null;
+  waitingAt: string | null;
 }
 
 export interface TaskList {
@@ -127,6 +133,8 @@ export interface VisitTask extends Task {
   note: string;
   /** E8-6 (R38-1): the notice shown under the buttons that save the location. */
   locationNotice: string;
+  /** E11-2 (R46-5): the open overtime request, if any. */
+  overtime: OvertimeRequest | null;
 }
 
 /** R34-4: is now inside the entry window of this visit? */

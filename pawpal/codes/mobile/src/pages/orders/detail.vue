@@ -12,6 +12,14 @@
       <text class="note" data-test="order-status">{{ result.body }}</text>
     </view>
 
+    <view v-if="order.extraFees.length" class="card extra" data-test="extra-fees">
+      <text class="section">Extra fee to approve</text>
+      <view v-for="f in order.extraFees" :key="f.id" class="row" :data-test="`extra-${f.id}`" @click="openFee(f.id)">
+        <text class="strong">Visit {{ f.index + 1 }} · {{ extraFeeTitle(f) }}</text>
+        <text class="link">Open ›</text>
+      </view>
+    </view>
+
     <view class="card">
       <text class="section">Visits ({{ order.visits.length }})</text>
       <view v-for="(v, i) in order.visits" :key="`${v.date}-${v.start}`" class="visit" data-test="visit" @click="openVisit(i)">
@@ -23,6 +31,7 @@
           <text class="note" data-test="visit-price">{{ v.quote.totalMinutes }} min · paid {{ formatRM(v.paidSen) }}</text>
           <text class="link">Details ›</text>
         </view>
+        <text v-if="order.runs[i]?.cancel" class="note" data-test="visit-cancelled">{{ cancelledText(order.runs[i].cancel!) }}</text>
         <text v-if="order.runs[i]?.status === 'report_sent'" class="link" data-test="report-ready" @click.stop="openReport(i)">{{ reportReadyText(order.runs[i].reportedAt!, new Date()) }} ›</text>
         <button v-if="canConfirm(i)" class="primary small" data-test="confirm-entry" :disabled="busy" @click.stop="confirm(i)">
           Confirm {{ order.caregiver.displayName }} is in
@@ -49,7 +58,10 @@
       <view class="row"><text class="strong">Paid</text><text class="strong" data-test="order-paid">{{ formatRM(order.paySen) }}</text></view>
     </view>
     <view v-if="refund" class="card" data-test="refund">
-      <text class="section">Refund</text>
+      <view class="row">
+        <text class="section">Refund</text>
+        <text class="link" data-test="refund-details" @click="openRefunds">Details ›</text>
+      </view>
       <text :class="refundDone ? 'ok' : 'wait'" data-test="refund-line">{{ refund }}</text>
     </view>
 
@@ -61,6 +73,7 @@
 
     <text v-if="error" class="error" data-test="error">{{ error }}</text>
     <button v-if="canRebook(order)" class="primary" data-test="rebook" :disabled="busy" @click="rebook">Book again</button>
+    <button v-if="anyCancellable" class="danger-ghost" data-test="cancel-visits" @click="openCancel">Cancel visits</button>
     <button v-if="order.status === 'pending_accept'" class="danger-ghost" data-test="withdraw" :disabled="busy" @click="withdraw">Withdraw booking</button>
     <view class="card"><HelpButton :order-no="order.number" label="Help with this order" /></view>
   </view>
@@ -72,7 +85,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app';
-import { ENTRY_METHOD_LABEL, REQUEST_RULES, canRebook, formatRM, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
+import { extraFeeTitle, ENTRY_METHOD_LABEL, REQUEST_RULES, canCancelVisit, canRebook, cancelledText, formatRM, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { confirmEntry, getOrderDetail } from '@/api/booking';
 import HelpButton from '@/components/HelpButton.vue';
@@ -149,6 +162,12 @@ async function confirm(i: number) {
 /** R39-1: straight to the report. */
 const openReport = (i: number) => uni.navigateTo({ url: `/pages/orders/report?id=${id}&i=${i}` });
 
+/** R42-2 O15 */
+const anyCancellable = computed(() => !!order.value && order.value.visits.some((v, i) => canCancelVisit(order.value!.status, order.value!.runs[i], v, now.value)));
+const openFee = (feeId: number) => uni.navigateTo({ url: `/pages/orders/extra?id=${id}&fee=${feeId}` });
+const openRefunds = () => uni.navigateTo({ url: `/pages/orders/refunds?id=${id}` });
+const openCancel = () => uni.navigateTo({ url: `/pages/orders/cancel?id=${id}` });
+
 /** R41-1 O21 */
 const rate = () => uni.navigateTo({ url: `/pages/orders/review?id=${id}` });
 
@@ -183,5 +202,6 @@ async function rebook() {
 .primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary.small { margin-top: 12rpx; font-size: 28rpx; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
+.extra { border-color: var(--pp-accent); }
 .danger-ghost { width: 100%; background: var(--pp-surface); color: var(--pp-danger); border: 1px solid var(--pp-danger); border-radius: var(--pp-radius-button); }
 </style>

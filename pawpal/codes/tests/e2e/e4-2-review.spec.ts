@@ -60,7 +60,8 @@ test('needs info with a reason, the caregiver fixes it, then approve with the IC
   await expect(admin.locator('[data-test=app-history]')).toContainText('IC and selfie match');
   await admin.locator('[data-test=back]').click();
   await admin.locator('[data-test=filter-approved]').click();
-  await expect(admin.locator('[data-test=review-list] tr', { hasText: siti })).toBeVisible();
+  // The test database keeps every run (8,000+ approved caregivers by E11-2), so the full list takes a while to draw.
+  await expect(admin.locator('[data-test=review-list] tr', { hasText: siti })).toBeVisible({ timeout: 30_000 });
   await admin.close();
 
   // Now a caregiver: the role switch is open.

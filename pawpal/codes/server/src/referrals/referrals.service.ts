@@ -138,6 +138,29 @@ export class ReferralsService {
     for (const s of rows) await client.query('UPDATE credit_grants SET remaining_sen = remaining_sen + $2 WHERE id = $1', [s.grant_id, s.amount_sen]);
   }
 
+  /** E10-1 (R42-3): part of a paid order's credit comes back as credit when a visit is cancelled. Returns what came back. */
+  async returnPart(client: PoolClient, orderId: number, amountSen: number): Promise<number> {
+    if (amountSen <= 0) return 0;
+    const { rows } = await client.query<{ id: number; grant_id: number; amount_sen: number }>(
+      "SELECT id, grant_id, amount_sen FROM credit_spends WHERE order_id = $1 AND status = 'spent' AND amount_sen > 0 ORDER BY id DESC FOR UPDATE",
+      [orderId],
+    );
+    let left = amountSen;
+    for (const s of rows) {
+      if (!left) break;
+      const back = Math.min(left, s.amount_sen);
+      if (back === s.amount_sen) await client.query("UPDATE credit_spends SET status = 'returned', updated_at = now() WHERE id = $1", [s.id]);
+      else {
+        // Keep the spent part, and record the returned part as its own row.
+        await client.query('UPDATE credit_spends SET amount_sen = amount_sen - $2, updated_at = now() WHERE id = $1', [s.id, back]);
+        await client.query("INSERT INTO credit_spends (order_id, grant_id, amount_sen, status) VALUES ($1, $2, $3, 'returned')", [orderId, s.grant_id, back]);
+      }
+      await client.query('UPDATE credit_grants SET remaining_sen = remaining_sen + $2 WHERE id = $1', [s.grant_id, back]);
+      left -= back;
+    }
+    return amountSen - left;
+  }
+
   private async codeOf(userId: number): Promise<string> {
     const { rows } = await this.db.pool.query<{ invite_code: string | null }>('SELECT invite_code FROM users WHERE id = $1', [userId]);
     if (rows[0]?.invite_code) return rows[0].invite_code;

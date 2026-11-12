@@ -44,16 +44,18 @@ export class ReviewsService {
   async stateOf(orderId: number): Promise<OrderReview> {
     const mine = await this.db.pool.query<ReviewRow>(`SELECT ${COLUMNS} FROM reviews r WHERE r.order_id = $1`, [orderId]);
     if (mine.rows[0]) return { state: 'done', until: null, mine: toReview(mine.rows[0]) };
-    const { rows } = await this.db.pool.query<{ visits: number; confirmed: number; until: string | null; open: boolean }>(
+    const { rows } = await this.db.pool.query<{ visits: number; confirmed: number; cancelled: number; until: string | null; open: boolean }>(
       `SELECT jsonb_array_length(o.visits) AS visits,
          (SELECT count(*)::int FROM visit_runs r WHERE r.order_id = o.id AND r.status = 'confirmed') AS confirmed,
+         (SELECT count(*)::int FROM visit_runs r WHERE r.order_id = o.id AND r.status = 'cancelled') AS cancelled,
          ${ts(`(SELECT max(confirmed_at) FROM visit_runs r WHERE r.order_id = o.id) + interval '${REVIEW_RULES.rateDays} days'`)} AS until,
          (SELECT max(confirmed_at) FROM visit_runs r WHERE r.order_id = o.id) + interval '${REVIEW_RULES.rateDays} days' > now() AS open
        FROM orders o WHERE o.id = $1 AND o.status = 'accepted'`,
       [orderId],
     );
     const o = rows[0];
-    if (!o || o.confirmed < o.visits) return { state: 'not_yet', until: null, mine: null };
+    // E10-1: cancelled visits count as final; at least one visit must have happened.
+    if (!o || !o.confirmed || o.confirmed + o.cancelled < o.visits) return { state: 'not_yet', until: null, mine: null };
     return { state: o.open ? 'open' : 'closed', until: o.until, mine: null };
   }
 

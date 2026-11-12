@@ -655,4 +655,58 @@ export const MIGRATIONS: Migration[] = [
       "UPDATE admins SET pages = array_append(pages, 'reviews') WHERE NOT ('reviews' = ANY (pages))",
     ],
   },
+  {
+    id: '033_visit_cancel',
+    sql: [
+      // E10-1 (round 42): the owner cancels a visit before it starts; the run row records it and what came back.
+      'ALTER TABLE visit_runs ALTER COLUMN arrived_at DROP NOT NULL',
+      'ALTER TABLE visit_runs DROP CONSTRAINT visit_runs_status_check',
+      "ALTER TABLE visit_runs ADD CONSTRAINT visit_runs_status_check CHECK (status IN ('arrived', 'in_service', 'report_sent', 'confirmed', 'disputed', 'cancelled'))",
+      'ALTER TABLE visit_runs ADD COLUMN cancelled_at TIMESTAMPTZ(3) NULL',
+      'ALTER TABLE visit_runs ADD COLUMN cancel_percent SMALLINT NULL CHECK (cancel_percent IN (0, 80, 100))',
+      'ALTER TABLE visit_runs ADD COLUMN cancel_refund_sen INT NULL CHECK (cancel_refund_sen >= 0)',
+      'ALTER TABLE visit_runs ADD COLUMN cancel_credit_sen INT NULL CHECK (cancel_credit_sen >= 0)',
+      'ALTER TABLE orders DROP CONSTRAINT orders_end_reason_check',
+      "ALTER TABLE orders ADD CONSTRAINT orders_end_reason_check CHECK (end_reason IN ('too_late', 'rejected', 'timeout', 'withdrawn', 'cancelled'))",
+    ],
+  },
+  {
+    id: '034_visit_waiting',
+    sql: [
+      // E11-1 (round 45): when the caregiver asked the owner to wait; the clock itself comes from booked start, arrival and entry.
+      'ALTER TABLE visit_runs ADD COLUMN waiting_requested_at TIMESTAMPTZ(3) NULL',
+    ],
+  },
+  {
+    id: '035_extra_fees',
+    sql: [
+      // E11-2 (round 46): overtime the caregiver asks for during a visit; approve and pay come with E11-3.
+      `CREATE TABLE extra_fees (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        kind VARCHAR(10) NOT NULL CHECK (kind IN ('overtime')),
+        units SMALLINT NOT NULL CHECK (units > 0),
+        amount_sen INT NOT NULL CHECK (amount_sen > 0),
+        status VARCHAR(10) NOT NULL CHECK (status IN ('requested', 'withdrawn')),
+        requested_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+      // R46-5: one open request per visit.
+      "CREATE UNIQUE INDEX extra_fees_open ON extra_fees (order_id, idx, kind) WHERE status = 'requested'",
+    ],
+  },
+  {
+    id: '036_extra_fee_pay',
+    sql: [
+      // E11-3 (round 47): waiting is an extra fee too; the owner pays, declines, or it lapses.
+      'ALTER TABLE extra_fees DROP CONSTRAINT extra_fees_kind_check',
+      "ALTER TABLE extra_fees ADD CONSTRAINT extra_fees_kind_check CHECK (kind IN ('overtime', 'waiting'))",
+      'ALTER TABLE extra_fees DROP CONSTRAINT extra_fees_status_check',
+      "ALTER TABLE extra_fees ADD CONSTRAINT extra_fees_status_check CHECK (status IN ('requested', 'paid', 'declined', 'lapsed', 'withdrawn', 'not_needed'))",
+      'ALTER TABLE extra_fees ADD COLUMN paid_at TIMESTAMPTZ(3) NULL',
+      // One paid overtime per visit as well (R46-5, R47-5).
+      "CREATE UNIQUE INDEX extra_fees_paid ON extra_fees (order_id, idx, kind) WHERE status = 'paid'",
+    ],
+  },
 ];

@@ -1,6 +1,7 @@
 /**
  * E7-1 "My orders" (O12, R30-1 … R30-6): paid orders only, newest first, 20 at a time, four filters.
  */
+import type { ExtraFee } from './extra-fees';
 import type { BookingVisit } from './booking';
 import { deadlineText, type OrderEnd, type OrderStatus, type OrderView } from './orders';
 import { formatRM, type ServiceLevel, type VisitQuote } from './rules';
@@ -68,12 +69,16 @@ export interface OrderDetail extends OrderView {
   runs: VisitRun[];
   /** E9-3 (R41-1, R41-3): whether the owner can rate the caregiver now. */
   review: OrderReview;
+  /** E11-3 (R47-1): waiting or overtime requests waiting for the owner. */
+  extraFees: ExtraFee[];
 }
 
 /** R31-3, R35-1: a visit's status for the owner — from the order, then from its own progress once booked. */
 export function visitStatus(o: Pick<OrderView, 'status'>, run?: Pick<VisitRun, 'status'>): string {
   if (o.status === 'pending_accept') return 'Waiting for caregiver';
-  if (o.status === 'accepted') return { arrived: 'Caregiver arrived', in_service: 'In service', report_sent: 'Report ready', confirmed: 'Confirmed', disputed: 'Under review' }[run?.status as string] ?? 'Booked';
+  // E10-1: a cancelled visit says so, even once the whole order is cancelled.
+  if (run?.status === 'cancelled') return 'Cancelled';
+  if (o.status === 'accepted') return { arrived: 'Caregiver arrived', in_service: 'In service', report_sent: 'Report ready', confirmed: 'Confirmed', disputed: 'Under review', cancelled: 'Cancelled' }[run?.status as string] ?? 'Booked';
   if (o.status === 'awaiting_payment') return 'Not paid yet';
   return 'Not going ahead';
 }

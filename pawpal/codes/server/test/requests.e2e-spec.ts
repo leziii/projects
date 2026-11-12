@@ -1,13 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask } from '@pawpal/shared';
+import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type StuckRefund, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask } from '@pawpal/shared';
 import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AlertsService } from '../src/alerts/alerts.service';
 import { AppModule } from '../src/app.module';
+import { CancelService } from '../src/bookings/cancel.service';
 import { CasesService } from '../src/bookings/cases.service';
 import { OrdersService } from '../src/bookings/orders.service';
+import { RefundsService } from '../src/bookings/refunds.service';
+import { ExtraFeesService } from '../src/bookings/extra-fees.service';
 import { TrustService } from '../src/caregivers/trust.service';
 import { DbService } from '../src/db/db.service';
 import { adminLogin } from './admin-helper';
@@ -535,7 +538,7 @@ describe('E6-1 caregiver sees requests', () => {
       expect(list.date).toBe(day);
       expect(list.bufferMin).toBe(30);
       expect(list.tasks).toEqual([
-        { orderId: order.id, index: order.visits.findIndex((v) => v.date === day), number: order.number, date: day, start: 540, minutes: order.visits.find((v) => v.date === day)!.quote.totalMinutes, area: 'Cheras', pets: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }], status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null },
+        { orderId: order.id, index: order.visits.findIndex((v) => v.date === day), number: order.number, date: day, start: 540, minutes: order.visits.find((v) => v.date === day)!.quote.totalMinutes, area: 'Cheras', pets: [{ name: 'Mimi', kind: 'cat' }, { name: 'Bobo', kind: 'dog' }], status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null, cancel: null, waitingAt: null },
       ]);
       // A date outside the 14 days falls back to today.
       expect((await tasks(cg.token, '?date=2020-01-01')).date).toBe(klDate(new Date()));
@@ -649,7 +652,7 @@ describe('E6-1 caregiver sees requests', () => {
       expect((await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(409)).body.code).toBe('NOT_LIVE_CONFIRM');
       const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
       expect(d.runs[0]).toMatchObject({ status: 'in_service', enteredBy: 'caregiver' });
-      expect(d.runs[1]).toEqual({ status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null });
+      expect(d.runs[1]).toEqual({ status: 'todo', arrivedAt: null, enteredAt: null, enteredBy: null, reportedAt: null, locationRecorded: false, confirmedAt: null, confirmedBy: null, cancel: null, waitingAt: null });
     });
 
     it('live confirm: the owner is told, confirms from the order, and the caregiver is told (R35-4, R35-5)', async () => {
@@ -1064,6 +1067,436 @@ describe('E6-1 caregiver sees requests', () => {
       expect(now.reviews.map((x) => x.id)).not.toContain(id);
       const noPage = await adminLogin(app, ['cases']);
       await http().get('/api/admin/reviews').set(noPage.header).expect(403);
+    });
+  });
+
+  describe('E10-1 cancel visits', () => {
+    const booked = async (owner?: Awaited<ReturnType<typeof login>>) => {
+      const cg = await caregiver();
+      const { owner: o, order, paymentId } = await paidOrder(cg, owner);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(o.token)).expect(200)).body as OrderDetail;
+      return { cg, owner: o, order, d, base: `/api/orders/${order.id}/cancel` };
+    };
+    const asUser = (u: { id: number }) => ({ id: u.id }) as User;
+
+    it('previews and cancels one visit at 100%; the caregiver is told and the time is free (R42-1, R42-3, R42-5)', async () => {
+      const { cg, owner, order, d, base } = await booked();
+      const p = (await http().get(base).set(auth(owner.token)).expect(200)).body as CancelPreview;
+      expect(p.lines.map((l) => [l.percent, l.refundSen, l.blocked])).toEqual([[100, d.visits[0].paidSen, null], [100, d.visits[1].paidSen, null]]);
+      expect((await http().post(base).set(auth(owner.token)).send({ visits: [], percents: [] }).expect(400)).body.code).toBe('CANCEL_INVALID');
+      expect((await http().post(base).set(auth(owner.token)).send({ visits: [0], percents: [80] }).expect(409)).body).toMatchObject({ code: 'AMOUNT_CHANGED', preview: { lines: p.lines } });
+
+      const r = (await http().post(base).set(auth(owner.token)).send({ visits: [0], percents: [100] }).expect(200)).body as CancelResult;
+      expect(r).toEqual({ cancelled: [{ index: 0, percent: 100, refundSen: d.visits[0].paidSen, creditSen: 0, refund: 'started' }], failed: [], refundSen: d.visits[0].paidSen, creditSen: 0, orderCancelled: false });
+      expect((await http().post(base).set(auth(owner.token)).send({ visits: [0], percents: [100] }).expect(200)).body).toEqual({ cancelled: [], failed: [{ index: 0, reason: 'Not cancelled: it was already cancelled' }], refundSen: 0, creditSen: 0, orderCancelled: false });
+
+      const after = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(after.status).toBe('accepted');
+      expect(after.runs[0]).toMatchObject({ status: 'cancelled', cancel: { percent: 100, refundSen: d.visits[0].paidSen, creditSen: 0 } });
+      expect(after.refundSen).toBe(d.visits[0].paidSen);
+      const pay = await db().query('SELECT amount_sen FROM payments WHERE ref = $1', [`order-${order.id}-refund-v0`]);
+      expect(pay.rows).toEqual([{ amount_sen: d.visits[0].paidSen }]);
+      const slots = await db().query('SELECT visit_date FROM booked_visits WHERE order_id = $1', [order.id]);
+      expect(slots.rows).toHaveLength(1);
+      const m = (await db().query('SELECT title, body, link_type FROM messages WHERE user_id = $1 AND title = $2', [cg.id, 'Visit 1 cancelled'])).rows[0];
+      expect(m).toMatchObject({ link_type: 'request' });
+      expect(m.body).toMatch(new RegExp(`^Order ${order.number}: the owner cancelled .+\\. It is no longer in your tasks\\.$`));
+      expect((await db().query('SELECT body FROM messages WHERE user_id = $1 AND title LIKE $2', [owner.id, 'Refund:%'])).rows[0].body).toMatch(/you cancelled visit 1\. RM[\d.]+ back to how you paid\.$/);
+      const t = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(t.status).toBe('cancelled');
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 });
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(409)).body.message).toBe('This visit was cancelled');
+
+      const stranger = await login();
+      await http().get(base).set(auth(stranger.token)).expect(404);
+    });
+
+    it('80% between 1 and 24 h, 0% under 1 h; a line passing asks again (R42-3, R42-4)', async () => {
+      const { owner, order, d } = await booked();
+      const svc = app.get(CancelService);
+      const start = (i: number) => visitTime(d.visits[i]).getTime();
+      const p = await svc.preview(asUser(owner), order.id, new Date(start(0) - 2 * 3600_000));
+      expect(p.lines[0]).toMatchObject({ percent: 80, refundSen: Math.round(d.visits[0].paidSen * 0.8) });
+      // Seen at 80% but submitted under 1 h before: nothing is cancelled.
+      await expect(svc.cancel(asUser(owner), order.id, { visits: [0], percents: [80] }, new Date(start(0) - 59 * 60_000))).rejects.toMatchObject({ response: { code: 'AMOUNT_CHANGED' } });
+      const r = await svc.cancel(asUser(owner), order.id, { visits: [0], percents: [0] }, new Date(start(0) - 59 * 60_000));
+      expect(r).toMatchObject({ refundSen: 0, cancelled: [{ index: 0, percent: 0 }] });
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [`order-${order.id}-refund-v0`])).rows).toHaveLength(0);
+      // Once its time has come, it cannot be cancelled.
+      expect(await svc.cancel(asUser(owner), order.id, { visits: [1], percents: [100] }, new Date(start(1)))).toMatchObject({ cancelled: [], failed: [{ index: 1, reason: 'Not cancelled: its time has started' }] });
+    });
+
+    it('cancelling every visit cancels the order; credit comes back as credit (R42-3, R42-6)', async () => {
+      const o = await login();
+      await http().post('/api/addresses').set(auth(o.token)).send(address).expect(201);
+      await db().query("INSERT INTO credit_grants (owner_id, amount_sen, remaining_sen, expires_on, reason) VALUES ($1, 1000, 1000, CURRENT_DATE + 30, 'test')", [o.id]);
+      const { cg, owner, order, d, base } = await booked(o);
+      expect(d.creditSen).toBe(1000);
+      const paid = d.visits[0].paidSen + d.visits[1].paidSen;
+      const r = (await http().post(base).set(auth(owner.token)).send({ visits: [1, 0], percents: [100, 100] }).expect(200)).body as CancelResult;
+      expect(r).toMatchObject({ refundSen: paid, creditSen: 1000, orderCancelled: true });
+      const after = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(after).toMatchObject({ status: 'cancelled', endReason: 'cancelled', refundSen: paid - 1000 });
+      expect((await db().query('SELECT COALESCE(SUM(remaining_sen), 0)::int AS sen FROM credit_grants WHERE owner_id = $1', [owner.id])).rows[0].sen).toBe(1000);
+      expect((await db().query('SELECT title FROM messages WHERE user_id = $1 AND title = $2', [after.caregiver.id, '2 visits cancelled'])).rows).toHaveLength(1);
+      // The caregiver still sees them, as Cancelled.
+      const cgUser = (await db().query('SELECT caregiver_id FROM orders WHERE id = $1', [order.id])).rows[0].caregiver_id;
+      expect(cgUser).toBe(after.caregiver.id);
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/1`).set(auth(cg.token)).expect(200)).body as VisitTask).status).toBe('cancelled');
+      expect(((await http().get(`/api/requests/${order.id}`).set(auth(cg.token)).expect(200)).body as RequestDetail).end).toBe('accepted');
+      expect((await http().get(base).set(auth(owner.token)).expect(409)).body.code).toBe('ORDER_NOT_BOOKED');
+    });
+
+    it('only booked orders: a waiting order uses Withdraw (R42-1)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      expect((await http().get(`/api/orders/${order.id}/cancel`).set(auth(owner.token)).expect(409)).body.code).toBe('ORDER_NOT_BOOKED');
+    });
+  });
+
+  describe('E10-2 per-visit results', () => {
+    const booked = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      return { cg, owner, order, d, base: `/api/orders/${order.id}/cancel` };
+    };
+
+    it('visits that can be cancelled go ahead; the others say why; messages list only the cancelled (R43-1, R43-2, R43-5)', async () => {
+      const { cg, owner, order, d, base } = await booked();
+      // Visit 1: the caregiver has arrived.
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      const r = (await http().post(base).set(auth(owner.token)).send({ visits: [1, 0], percents: [100, 0] }).expect(200)).body as CancelResult;
+      expect(r).toEqual({
+        cancelled: [{ index: 1, percent: 100, refundSen: d.visits[1].paidSen, creditSen: 0, refund: 'started' }],
+        failed: [{ index: 0, reason: 'Not cancelled: the caregiver has already arrived' }],
+        refundSen: d.visits[1].paidSen,
+        creditSen: 0,
+        orderCancelled: false,
+      });
+      const after = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(after.runs.map((x) => x.status)).toEqual(['arrived', 'cancelled']);
+      const msgs = (await db().query("SELECT title FROM messages WHERE user_id = $1 AND title LIKE '%cancelled'", [cg.id])).rows;
+      expect(msgs).toEqual([{ title: 'Visit 2 cancelled' }]);
+    });
+
+    it('a refund that cannot start leaves the visit cancelled and is retried (R43-4)', async () => {
+      const { owner, order, d, base } = await booked();
+      const chargeId = (await db().query('SELECT charge_id FROM orders WHERE id = $1', [order.id])).rows[0].charge_id;
+      await db().query('UPDATE orders SET charge_id = NULL WHERE id = $1', [order.id]);
+      const r = (await http().post(base).set(auth(owner.token)).send({ visits: [0], percents: [100] }).expect(200)).body as CancelResult;
+      expect(r.cancelled).toEqual([{ index: 0, percent: 100, refundSen: d.visits[0].paidSen, creditSen: 0, refund: 'processing' }]);
+      expect(((await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail).runs[0].status).toBe('cancelled');
+      const ref = `order-${order.id}-refund-v0`;
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [ref])).rows).toHaveLength(0);
+      await db().query('UPDATE orders SET charge_id = $2 WHERE id = $1', [order.id, chargeId]);
+      expect(await app.get(CancelService).retryRefunds()).toBeGreaterThanOrEqual(1);
+      expect((await db().query('SELECT amount_sen FROM payments WHERE ref = $1', [ref])).rows).toEqual([{ amount_sen: d.visits[0].paidSen }]);
+      // Once started, never again.
+      await app.get(CancelService).retryRefunds();
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [ref])).rows).toHaveLength(1);
+    });
+  });
+
+  describe('E10-3 track refunds', () => {
+    const fail = (paymentId: number) => http().post(`/api/mock-gateway/payments/${paymentId}/outcome`).send({ outcome: 'failure' }).expect(200);
+    const payId = async (ref: string) => Number((await db().query('SELECT id FROM payments WHERE ref = $1', [ref])).rows[0].id);
+    const later = (min: number) => new Date(Date.now() + min * 60_000);
+    const booked = async (owner?: Awaited<ReturnType<typeof login>>) => {
+      const cg = await caregiver();
+      const { owner: o, order, paymentId } = await paidOrder(cg, owner);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(o.token)).expect(200)).body as OrderDetail;
+      return { cg, owner: o, order, d };
+    };
+
+    it('a cancelled visit refund: on its way, being processed after a failure, retried, then refunded and the owner told (R44-2 … R44-5)', async () => {
+      const { owner, order, d } = await booked();
+      await http().post(`/api/orders/${order.id}/cancel`).set(auth(owner.token)).send({ visits: [0], percents: [100] }).expect(200);
+      const get = async () => (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      const sen = d.visits[0].paidSen;
+      expect(await get()).toEqual({
+        orderId: order.id,
+        number: order.number,
+        dueSen: sen,
+        refundedSen: 0,
+        onItsWaySen: sen,
+        creditBackSen: 0,
+        lines: [{ key: 'v0', reason: 'Visit 1 cancelled', amountSen: sen, state: 'on_its_way', doneAt: null }],
+      });
+
+      const ref = `order-${order.id}-refund-v0`;
+      await fail(await payId(ref));
+      expect((await get()).lines[0].state).toBe('processing');
+      // O13 still shows the money as due.
+      expect(((await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail).refundSen).toBe(sen);
+      // A few minutes apart: not at once.
+      const svc = app.get(RefundsService);
+      await svc.retryFailed(new Date());
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [`${ref}-r1`])).rows).toHaveLength(0);
+      expect(await svc.retryFailed(later(4))).toBeGreaterThanOrEqual(1);
+      expect((await get()).lines[0].state).toBe('on_its_way');
+
+      await succeed(await payId(`${ref}-r1`));
+      const done = await get();
+      expect(done).toMatchObject({ dueSen: sen, refundedSen: sen, onItsWaySen: 0 });
+      expect(done.lines[0]).toMatchObject({ state: 'refunded', doneAt: expect.stringMatching(/^\d{4}-\d\d-\d\d /) });
+      const money = `RM${sen / 100}`;
+      expect((await db().query("SELECT title, body, link_type FROM messages WHERE user_id = $1 AND title LIKE 'Refund received%'", [owner.id])).rows).toEqual([
+        { title: `Refund received: ${money}`, body: `Order ${order.number}: ${money} (Visit 1 cancelled) is back to how you paid.`, link_type: 'order' },
+      ]);
+      // Never sent again once refunded.
+      await svc.retryFailed(later(10));
+      expect((await db().query("SELECT COUNT(*)::int AS n FROM payments WHERE ref LIKE $1 AND status <> 'failed'", [`${ref}%`])).rows[0].n).toBe(1);
+
+      const stranger = await login();
+      await http().get(`/api/orders/${order.id}/refunds`).set(auth(stranger.token)).expect(404);
+    });
+
+    it('after 3 failed retries the admin sees it on Payments and can send it again (R44-4)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200);
+      const base = `order-${order.id}-refund-${paymentId}`;
+      const svc = app.get(RefundsService);
+      const refs = [base, `${base}-r1`, `${base}-r2`, `${base}-r3`];
+      for (const [i, ref] of refs.entries()) {
+        if (i) await svc.retryFailed(later(4 * i));
+        await fail(await payId(ref));
+      }
+      await svc.retryFailed(later(30));
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [`${base}-r4`])).rows).toHaveLength(0);
+      const r = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      expect(r.lines).toEqual([{ key: `full-${paymentId}`, reason: 'Withdrawn', amountSen: order.paySen, state: 'processing', doneAt: null }]);
+
+      const admin = await adminLogin(app, ['payments']);
+      const stuck = (await http().get('/api/admin/refunds/stuck').set(admin.header).expect(200)).body as StuckRefund[];
+      expect(stuck.find((x) => x.orderId === order.id)).toMatchObject({ number: order.number, key: `full-${paymentId}`, reason: 'Withdrawn', amountSen: order.paySen, tries: 4, lastFailure: 'Declined by bank (mock)' });
+      const noPage = await adminLogin(app, ['cases']);
+      await http().get('/api/admin/refunds/stuck').set(noPage.header).expect(403);
+
+      const after = (await http().post('/api/admin/refunds/retry').set(admin.header).send({ orderId: order.id, key: `full-${paymentId}` }).expect(200)).body as StuckRefund[];
+      expect(after.find((x) => x.orderId === order.id)).toBeUndefined();
+      expect((await http().post('/api/admin/refunds/retry').set(admin.header).send({ orderId: order.id, key: `full-${paymentId}` }).expect(409)).body.code).toBe('REFUND_NOT_FAILED');
+      expect((await http().post('/api/admin/refunds/retry').set(admin.header).send({ orderId: order.id, key: 'v9' }).expect(404)).body.code).toBe('REFUND_NOT_FOUND');
+      await succeed(await payId(`${base}-r4`));
+      expect(((await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds).lines[0].state).toBe('refunded');
+    });
+
+    it('credit back is shown apart from money; a refund not started yet is being processed (R44-2, R43-4)', async () => {
+      const o = await login();
+      await http().post('/api/addresses').set(auth(o.token)).send(address).expect(201);
+      await db().query("INSERT INTO credit_grants (owner_id, amount_sen, remaining_sen, expires_on, reason) VALUES ($1, 1000, 1000, CURRENT_DATE + 30, 'test')", [o.id]);
+      const { owner, order, d } = await booked(o);
+      await db().query('UPDATE orders SET charge_id = NULL WHERE id = $1', [order.id]);
+      await http().post(`/api/orders/${order.id}/cancel`).set(auth(owner.token)).send({ visits: [0, 1], percents: [100, 100] }).expect(200);
+      const r = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      const paid = d.visits[0].paidSen + d.visits[1].paidSen;
+      expect(r).toMatchObject({ dueSen: paid - 1000, refundedSen: 0, onItsWaySen: paid - 1000, creditBackSen: 1000 });
+      expect(r.lines.map((l) => [l.key, l.reason, l.state])).toEqual([
+        ['v0', 'Visit 1 cancelled', 'processing'],
+        ['v1', 'Visit 2 cancelled', 'processing'],
+      ]);
+    });
+  });
+
+  describe('E11-1 request waiting', () => {
+    const ready = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      return { cg, owner, order, wait: () => http().post(`/api/caregiver/tasks/${order.id}/0/wait`).set(auth(cg.token)) };
+    };
+
+    it('only after arriving and once; recorded, the owner told the rule; entry stops it (R45-1, R45-2, R45-5)', async () => {
+      const { cg, owner, order, wait } = await ready();
+      expect((await wait().expect(409)).body).toMatchObject({ code: 'CANNOT_WAIT', message: 'Tap "I\'ve arrived" first' });
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      const v = (await wait().expect(200)).body as VisitTask;
+      expect(v.status).toBe('arrived');
+      expect(Date.now() - klInstant(v.waitingAt!).getTime()).toBeLessThan(60_000);
+      expect((await wait().expect(409)).body.message).toBe('Waiting is already requested');
+      const m = (await db().query("SELECT title, body, link_type FROM messages WHERE user_id = $1 AND title LIKE '%is waiting for you'", [owner.id])).rows;
+      expect(m).toHaveLength(1);
+      expect(m[0].link_type).toBe('order');
+      expect(m[0].body).toMatch(/is waiting at the door from \d{1,2}:\d\d [ap]m\. First 10 min free, then RM5 per started 10 min, up to 60 min \/ RM25\. Waiting stops when you let them in\.$/);
+      expect((await db().query("SELECT reason FROM status_history WHERE entity = 'visit' AND entity_id = $1 ORDER BY id DESC LIMIT 1", [order.id])).rows[0].reason).toBe('Owner asked to wait for visit 1');
+      // The owner sees it on the order too.
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0].waitingAt).toBe(v.waitingAt);
+      // Let in: the clock stops and no new request.
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      const after = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(after).toMatchObject({ status: 'in_service', waitingAt: v.waitingAt });
+      expect(after.enteredAt).not.toBeNull();
+    });
+
+    it('not after entry, and only the visit\'s caregiver (R45-1)', async () => {
+      const { cg, order, wait } = await ready();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      await db().query("UPDATE visit_runs SET status = 'in_service', entered_at = now(), entered_by = 'owner' WHERE order_id = $1 AND idx = 0", [order.id]);
+      expect((await wait().expect(409)).body.message).toBe('You are already in');
+      const other = await caregiver();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/wait`).set(auth(other.token)).expect(404);
+    });
+  });
+
+  describe('E11-2 request overtime', () => {
+    const inService = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      const moved = (await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200)).body as { date: string; start: number };
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      const base = `/api/caregiver/tasks/${order.id}/0/overtime`;
+      return { cg, owner, order, moved, base };
+    };
+
+    it('only in service; units up to her limit; the owner is told; one at a time; withdraw (R46-1, R46-2, R46-4, R46-5)', async () => {
+      const { cg, owner, order, base } = await inService();
+      expect((await http().get(base).set(auth(cg.token)).expect(409)).body.code).toBe('NOT_IN_SERVICE');
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+
+      const info = (await http().get(base).set(auth(cg.token)).expect(200)).body as OvertimeInfo;
+      expect(info).toMatchObject({ limitMin: 30, bookedMin: 0, open: null });
+      expect(info.choices.map((c) => [c.units, c.fits])).toEqual([[1, true], [2, true]]);
+      expect(info.choices[0].text).toMatch(/^Fits \(/);
+      expect((await http().post(base).set(auth(cg.token)).send({ units: 3 }).expect(409)).body).toMatchObject({ code: 'OVERTIME_TOO_LONG', message: 'You can ask for up to 30 min on this visit' });
+      expect((await http().post(base).set(auth(cg.token)).send({ units: 1.5 }).expect(409)).body.code).toBe('OVERTIME_TOO_LONG');
+
+      const asked = (await http().post(base).set(auth(cg.token)).send({ units: 2 }).expect(200)).body as OvertimeInfo;
+      expect(asked.open).toMatchObject({ units: 2, amountSen: 2000, status: 'requested' });
+      expect((await http().post(base).set(auth(cg.token)).send({ units: 1 }).expect(409)).body.code).toBe('OVERTIME_OPEN');
+      const m = (await db().query("SELECT title, body FROM messages WHERE user_id = $1 AND title LIKE 'Overtime%'", [owner.id])).rows;
+      expect(m).toEqual([{ title: 'Overtime asked: 30 min · RM20', body: expect.stringMatching(/ asks to stay 30 min longer on the visit at .+\. Until you approve and pay, only the booked service is done\.$/) }]);
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask).overtime).toMatchObject({ units: 2 });
+
+      const back = (await http().post(`${base}/withdraw`).set(auth(cg.token)).expect(200)).body as OvertimeInfo;
+      expect(back.open).toBeNull();
+      expect((await http().post(`${base}/withdraw`).set(auth(cg.token)).expect(409)).body.code).toBe('NO_OVERTIME');
+      expect((await db().query("SELECT title FROM messages WHERE user_id = $1 AND title = 'Overtime request withdrawn'", [owner.id])).rows).toHaveLength(1);
+      // Can ask again after withdrawing.
+      await http().post(base).set(auth(cg.token)).send({ units: 1 }).expect(200);
+      expect((await db().query("SELECT status FROM extra_fees WHERE order_id = $1 ORDER BY id", [order.id])).rows.map((r) => r.status)).toEqual(['withdrawn', 'requested']);
+      // Another caregiver cannot see it.
+      const other = await caregiver();
+      await http().get(base).set(auth(other.token)).expect(404);
+    });
+
+    it('the extra time must clear the next visit with the travel buffer (R46-3)', async () => {
+      const { cg, owner, order, moved, base } = await inService();
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      const { endMin } = (await http().get(base).set(auth(cg.token)).expect(200)).body as OvertimeInfo;
+      // Next visit starts 45 min after the end: with a 30 min buffer only 15 min fits.
+      await db().query("INSERT INTO booked_visits (caregiver_id, visit_date, start_min, minutes, label) VALUES ($1, $2, $3, 30, 'Test visit')", [cg.id, moved.date, endMin + 45]);
+      const info = (await http().get(base).set(auth(cg.token)).expect(200)).body as OvertimeInfo;
+      expect(info.choices.map((c) => c.fits)).toEqual([true, false]);
+      expect(info.choices[1].text).toMatch(/^Clashes with your \d{1,2}:\d\d [ap]m visit$/);
+      expect((await http().post(base).set(auth(cg.token)).send({ units: 2 }).expect(409)).body).toMatchObject({ code: 'OVERTIME_CLASH', message: info.choices[1].text });
+      await http().post(base).set(auth(cg.token)).send({ units: 1 }).expect(200);
+    });
+  });
+
+  describe('E11-3 approve and pay extra fees', () => {
+    const fail = (paymentId: number) => http().post(`/api/mock-gateway/payments/${paymentId}/outcome`).send({ outcome: 'failure' }).expect(200);
+    const inService = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, fees: `/api/orders/${order.id}/extra-fees` };
+    };
+
+    it('overtime: on the order, a failed payment can be tried again, paid → the caregiver may stay; no withdraw after (R47-1, R47-2, R47-5)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/overtime`).set(auth(cg.token)).send({ units: 2 }).expect(200);
+      const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.extraFees).toHaveLength(1);
+      const fee = d.extraFees[0];
+      expect(fee).toMatchObject({ kind: 'overtime', units: 2, amountSen: 2000, status: 'requested', index: 0, payment: null });
+
+      expect((await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'cash' }).expect(400)).body.code).toBe('BAD_METHOD');
+      const first = (await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number };
+      // Pressed twice while the bank checks: the same payment.
+      expect(((await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number }).paymentId).toBe(first.paymentId);
+      await fail(first.paymentId);
+      const again = (await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number };
+      expect(again.paymentId).not.toBe(first.paymentId);
+      await succeed(again.paymentId);
+
+      const list = (await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[];
+      expect(list[0]).toMatchObject({ status: 'paid', payment: { id: again.paymentId, status: 'succeeded' } });
+      expect(list[0].paidAt).not.toBeNull();
+      const m = (await db().query("SELECT body FROM messages WHERE user_id = $1 AND title = 'Overtime paid: 30 min · RM20'", [cg.id])).rows;
+      expect(m[0].body).toMatch(/the owner paid\. You may stay until \d{1,2}:\d\d [ap]m\.$/);
+      const t = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(t.overtime).toMatchObject({ status: 'paid', units: 2 });
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/overtime/withdraw`).set(auth(cg.token)).expect(409)).body.code).toBe('OVERTIME_PAID');
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/overtime`).set(auth(cg.token)).send({ units: 1 }).expect(409)).body.code).toBe('OVERTIME_PAID');
+      expect((await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(409)).body.code).toBe('FEE_CLOSED');
+      const stranger = await login();
+      await http().get(fees).set(auth(stranger.token)).expect(404);
+    });
+
+    it('overtime: decline tells the caregiver; an unpaid request lapses when the booked time ends (R47-2, R47-4)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      const ask = () => http().post(`/api/caregiver/tasks/${order.id}/0/overtime`).set(auth(cg.token)).send({ units: 1 }).expect(200);
+      await ask();
+      let fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      expect((await http().post(`${fees}/${fee.id}/decline`).set(auth(owner.token)).expect(200)).body).toMatchObject({ status: 'declined' });
+      expect((await db().query("SELECT body FROM messages WHERE user_id = $1 AND title = 'Overtime declined'", [cg.id])).rows[0].body).toBe(`Order ${order.number}: the owner declined 15 min · RM10. Finish the booked service only.`);
+      // She may ask again; it lapses once the booked service time has passed.
+      await ask();
+      fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      await app.get(ExtraFeesService).lapseDue(order.id, new Date(Date.now() + 3 * 3600_000));
+      expect(((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0]).toMatchObject({ id: fee.id, status: 'lapsed' });
+      expect((await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(409)).body.code).toBe('FEE_CLOSED');
+    });
+
+    it('waiting: the owner can prepay RM25, never decline; let in within 10 min → nothing to pay (R47-3)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/wait`).set(auth(cg.token)).expect(200);
+      const fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      expect(fee).toMatchObject({ kind: 'waiting', amountSen: 2500, status: 'requested', entryMethod: 'live_confirm' });
+      expect((await http().post(`${fees}/${fee.id}/decline`).set(auth(owner.token)).expect(409)).body.code).toBe('CANNOT_DECLINE');
+      // Let in before the booked start: free.
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      expect(((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0]).toMatchObject({ status: 'not_needed' });
+      expect(((await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail).extraFees).toEqual([]);
+    });
+
+    it('waiting prepaid: the caregiver is told; paid after the request closed → refunded in full (R47-3, R47-5)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/wait`).set(auth(cg.token)).expect(200);
+      const fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      const { paymentId } = (await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'duitnow' }).expect(200)).body as { paymentId: number };
+      await succeed(paymentId);
+      expect((await db().query("SELECT title FROM messages WHERE user_id = $1 AND title = 'Waiting prepaid'", [cg.id])).rows).toHaveLength(1);
+
+      // A second visit's request closes while the payment is still open.
+      const other = await inService();
+      await http().post(`/api/caregiver/tasks/${other.order.id}/0/wait`).set(auth(other.cg.token)).expect(200);
+      const f2 = ((await http().get(other.fees).set(auth(other.owner.token)).expect(200)).body as ExtraFee[])[0];
+      const p2 = (await http().post(`${other.fees}/${f2.id}/pay`).set(auth(other.owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number };
+      await db().query("UPDATE extra_fees SET status = 'not_needed' WHERE id = $1", [f2.id]);
+      await succeed(p2.paymentId);
+      expect((await db().query('SELECT amount_sen FROM payments WHERE ref = $1', [`fee-${f2.id}-refund-${p2.paymentId}`])).rows).toEqual([{ amount_sen: 2500 }]);
+      void owner;
     });
   });
 

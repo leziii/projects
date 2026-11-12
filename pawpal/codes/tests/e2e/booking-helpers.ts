@@ -26,3 +26,20 @@ export async function readyToPay(request: APIRequestContext, browser: Browser, w
   if (withEntry) expect((await request.post(`${API}/bookings/draft/entry`, { headers, data: { method: 'live_confirm' } })).ok()).toBe(true);
   return { token, cat, caregiverId: c.id as number, headers, caregiver: c };
 }
+
+const next = new Date(Date.parse(`${day}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
+
+/** A booked order (paid and accepted) with one or two visits, more than 24 h away. */
+export async function bookedOrder(request: APIRequestContext, browser: Browser, two: boolean) {
+  const r = await readyToPay(request, browser, true);
+  if (two) {
+    expect((await request.post(`${API}/bookings/draft`, { headers: r.headers, data: { petIds: [r.cat.id], visits: [{ date: day, start: 600 }, { date: next, start: 600 }] } })).ok()).toBe(true);
+    expect((await request.post(`${API}/bookings/draft/caregiver`, { headers: r.headers, data: { caregiverId: r.caregiverId } })).ok()).toBe(true);
+    expect((await request.post(`${API}/bookings/draft/entry`, { headers: r.headers, data: { method: 'live_confirm' } })).ok()).toBe(true);
+  }
+  expect((await request.post(`${API}/auth/role`, { headers: r.caregiver.headers, data: { role: 'caregiver' } })).ok()).toBe(true);
+  const { order, paymentId } = await (await request.post(`${API}/bookings/draft/pay`, { headers: r.headers, data: { healthConfirmed: true, method: 'tng' } })).json();
+  expect((await request.post(`${API}/mock-gateway/payments/${paymentId}/outcome`, { data: { outcome: 'success' } })).ok()).toBe(true);
+  expect((await request.post(`${API}/requests/${order.id}/accept`, { headers: r.caregiver.headers })).ok()).toBe(true);
+  return { r, order };
+}

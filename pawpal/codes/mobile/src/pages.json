@@ -113,6 +113,37 @@
 			}
 		},
 		{
+			"path": "pages/orders/cancel",
+			"style": {
+				"navigationBarTitleText": "Cancel visits"
+			}
+		},
+		{
+			"path": "pages/caregiver/overtime",
+			"style": {
+				"navigationBarTitleText": "Overtime"
+			}
+		},
+		{
+			"path": "pages/caregiver/waiting",
+			"style": {
+				"navigationBarTitleText": "Waiting"
+			}
+		},
+		{
+			"path": "pages/orders/extra",
+			"style": {
+				"navigationBarTitleText": "Extra fee"
+			}
+		},
+		{
+			"path": "pages/orders/refunds",
+			"style": {
+				"navigationBarTitleText": "Refunds",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/orders/review",
 			"style": {
 				"navigationBarTitleText": "Rate your caregiver"

@@ -13,8 +13,15 @@ import { OrdersService } from './orders.service';
 import { LocationFlagsController, RequestsController, RequestsDevController } from './requests.controller';
 import { RequestsService } from './requests.service';
 import { AdminReviewsController, ReviewsController } from './reviews.controller';
+import { CancelController } from './cancel.controller';
+import { CancelService } from './cancel.service';
 import { ReviewsService } from './reviews.service';
+import { OvertimeService } from './overtime.service';
+import { ExtraFeesService } from './extra-fees.service';
+import { ExtraFeesController } from './extra-fees.controller';
+import { AdminRefundsController, RefundsController, RefundsDevController } from './refunds.controller';
+import { RefundsService } from './refunds.service';
 import { VisitRunsService } from './visit-runs.service';
 
-@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController, LocationFlagsController, CasesController, AdminCasesController, CasesDevController, ReviewsController, AdminReviewsController], providers: [ReviewsService, BookingsService, OrdersService, RequestsService, VisitRunsService, CasesService] })
+@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController, LocationFlagsController, CasesController, AdminCasesController, CasesDevController, ReviewsController, AdminReviewsController, CancelController, RefundsController, AdminRefundsController, RefundsDevController, ExtraFeesController], providers: [ExtraFeesService, OvertimeService, RefundsService, ReviewsService, CancelService, BookingsService, OrdersService, RequestsService, VisitRunsService, CasesService] })
 export class BookingsModule {}

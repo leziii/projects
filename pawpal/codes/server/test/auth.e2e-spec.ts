@@ -4,6 +4,7 @@ import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { DbService } from '../src/db/db.service';
 import { RedisService } from '../src/redis/redis.service';
 import { MockSmsSender, SMS_SENDER } from '../src/sms/sms';
 
@@ -13,6 +14,14 @@ describe('E2-1 login with phone and SMS code', () => {
   const http = () => request(app.getHttpServer());
   /** A fresh Malaysian mobile number for each test, so limits never collide. */
   const newPhone = () => `+6011${String(randomInt(0, 1e8)).padStart(8, '0')}`;
+  /** A number no account has yet (the test database keeps growing). */
+  const unusedPhone = async () => {
+    for (;;) {
+      const phone = newPhone();
+      const { rowCount } = await app.get(DbService).pool.query('SELECT 1 FROM users WHERE phone = $1', [phone]);
+      if (!rowCount) return phone;
+    }
+  };
   const wrong = (code: string) => String((Number(code) + 1) % 1e6).padStart(6, '0');
 
   const sendCode = async (phone: string) => (await http().post('/api/auth/code').send({ phone }).expect(200)).body;
@@ -43,7 +52,7 @@ describe('E2-1 login with phone and SMS code', () => {
   });
 
   it('first login creates the account and returns a token; /me knows the user', async () => {
-    const phone = newPhone();
+    const phone = await unusedPhone();
     const { devCode } = await sendCode(phone);
     const res = await login(phone, devCode).expect(200);
     expect(res.body).toMatchObject({ isNew: true, user: { phone } });

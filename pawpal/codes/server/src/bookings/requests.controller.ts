@@ -2,10 +2,11 @@ import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { SERVICE_RULES, type LocationFlagRow, type RequestDetail, type RequestList, type TaskList, type User, type VisitTask } from '@pawpal/shared';
+import { SERVICE_RULES, type LocationFlagRow, type OvertimeInfo, type RequestDetail, type RequestList, type TaskList, type User, type VisitTask } from '@pawpal/shared';
 import { AdminGuard, ForPage } from '../admin/admin.guard';
 import { AuthGuard, CurrentUser, NeedsRole } from '../auth/auth.guard';
 import { OrdersService } from './orders.service';
+import { OvertimeService } from './overtime.service';
 import { RequestsService, type CaregiverHome, type PausedInfo } from './requests.service';
 
 /** Caregiver dashboard (S01) and booking requests (S06). Only approved caregivers in the caregiver role (R14-4). */
@@ -15,6 +16,7 @@ export class RequestsController {
   constructor(
     private readonly requests: RequestsService,
     private readonly orders: OrdersService,
+    private readonly overtimes: OvertimeService,
   ) {}
 
   @Get('caregiver/home')
@@ -54,6 +56,37 @@ export class RequestsController {
   }
 
   /** E8-4 S11: tick or untick one checklist item (R36-3). */
+  /** E11-2 S14 Overtime (R46-2, R46-3). */
+  @Get('caregiver/tasks/:orderId/:i/overtime')
+  @NeedsRole('caregiver')
+  overtime(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number): Promise<OvertimeInfo> {
+    return this.overtimes.info(user, orderId, i);
+  }
+
+  /** E11-2 (R46-2 … R46-4) */
+  @Post('caregiver/tasks/:orderId/:i/overtime')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  askOvertime(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number, @Body() body: { units?: unknown }): Promise<OvertimeInfo> {
+    return this.overtimes.request(user, orderId, i, body?.units);
+  }
+
+  /** E11-2 (R46-5) */
+  @Post('caregiver/tasks/:orderId/:i/overtime/withdraw')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  withdrawOvertime(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number): Promise<OvertimeInfo> {
+    return this.overtimes.withdraw(user, orderId, i);
+  }
+
+  /** E11-1 "Owner asked me to wait" (R45-1). */
+  @Post('caregiver/tasks/:orderId/:i/wait')
+  @HttpCode(200)
+  @NeedsRole('caregiver')
+  wait(@CurrentUser() user: User, @Param('orderId', ParseIntPipe) orderId: number, @Param('i', ParseIntPipe) i: number): Promise<VisitTask> {
+    return this.requests.requestWaiting(user, orderId, i);
+  }
+
   @Post('caregiver/tasks/:orderId/:i/check')
   @HttpCode(200)
   @NeedsRole('caregiver')

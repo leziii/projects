@@ -216,6 +216,12 @@ flowchart LR
 | Report view (O17, O13, O14) | Owner opens O17 from the message or "View report" on O14; photos, checklist, note, sent time, deadline; read only until E9-2 | Built (E9-1) |
 | Confirm or dispute (O17, O18, admin) | Confirm with popup or auto after 12 h → Confirmed; Raise a problem (type, description, ≤ 3 photos) → case, clock stops, Under review, whole-order payout held; only before confirmed; admin case list | Built (E9-2) |
 | Reviews (O21, O08, O07, S07, admin) | After all visits confirmed, within 14 days; 1–5 stars + comment ≤ 300; no edits; O08 average + 5 newest; O07 short rating or New; caregiver replies once; admin hides with reason; not linked to money | Built (E9-3) |
+| Cancel visits (O15, O13, O14, S08) | Booked order, visit not started; 100/80/0% by submit time on what was paid per visit; credit back as credit; re-confirm if amount changes; caregiver told, visit greyed; all cancelled → order Cancelled; popup with amount | Built (E10-1) |
+| Per-visit cancel results (O15) | Partial success kept; each ticked visit shows ✓ cancelled with amount or ✗ reason; % change still stops all; refund that cannot start → "being processed", auto retry; messages list only cancelled visits | Built (E10-2) |
+| Refund tracking (O16) | O13 "Details ›" → O16; due / refunded / on its way (money) plus credit back; one line per refund with reason, amount, status (never "failed"); 3 auto retries then admin alert and admin retry; "Refund received" message; no restore; extra fees in E11 | Built (E10-3) |
+| Request waiting (S10, S14) | S10 "Owner asked me to wait" after arrival, before entry; clock from later of booked start and arrival to entry; 10 min free then RM5 per started 10 min, cap 60 min / RM25; prepay RM25, unused refunded (E11-4); owner approve/pay in E11-3; at 60 min "Waiting limit reached" | Built (E11-1) |
+| Request overtime (S11, S14) | S11 "Ask for overtime" while in service → S14; 15-min units RM10, up to own overtime limit; next visit + buffer and blocks checked, Send off on clash; owner told, approve/pay E11-3; one open request per visit, withdraw before paid | Built (E11-2) |
+| Approve and pay extra fees (O19, O11) | "Extra fee to approve" card on the order and message → O19; overtime: approve and pay (booking pay page) or Decline; waiting: pay RM25 prepay or "Let them in now"; unpaid overtime lapses at booked end; no withdraw after paid; failed payment retried | Built (E11-3) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -312,6 +318,13 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E9-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 6 Nov 2026 |
 | E9-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (pick several photos at once; Raise a problem is red; auto-confirm checked by automated test and screenshots) | 6 Nov 2026 |
 | E9-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots, KF approved) | 7 Nov 2026 |
+| R41-8 test card form | ✅ Done · Card on the test payment page asks for number, name, expiry, CVV (checked in the browser, never sent or saved) · automated tests 0 errors 0 warnings · KF hand test passed | 7 Nov 2026 |
+| E10-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed | 8 Nov 2026 |
+| E10-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: cancelled order shows each visit Cancelled, refund line no longer says "in full") | 8 Nov 2026 |
+| E10-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots) | 9 Nov 2026 |
+| E11-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: minutes show "0 min" when let in before waiting began) | 9 Nov 2026 |
+| E11-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; also gave an old admin list test more time) | 10 Nov 2026 |
+| E11-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: Declined shown grey, payment-failed line aligned; also fixed an old login test that could pick a used phone) | 12 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -897,3 +910,62 @@ All business rules are decided. Only these remain:
 | R41-6 | Admin | "Reviews" page lists all; Hide with a reason removes it from profile and average; every hide logged |
 | R41-7 | Money | Not linked to payout; does not replace Confirm |
 | R41-8 | Card payment (KF, same day) | PawPal never collects card numbers; the real gateway's own page does (E15). Test page gets a fake card form after E9-3 |
+
+### Round 42 · 7 Nov 2026 · KF decision (E10-1 cancel visits)
+| # | Question | Decision |
+|---|---|---|
+| R42-1 | Which visits | Visits of a booked (accepted) order not yet started; once the caregiver taps Arrived, normal cancel stops (problems → O18) |
+| R42-2 | Where | O13 "Cancel visits" → O15 with ticks per visit; O14 "Cancel this visit" → O15 with that visit ticked |
+| R42-3 | Amount | Each visit's % (≥24 h 100 · 1–24 h 80 · <1 h 0) applies to what was actually paid for that visit after promo and credit; money back to the payment method, credit used comes back as credit |
+| R42-4 | Amount changed | If a 24 h or 1 h line passes while O15 is open, submit stops, shows the new amounts and asks again; never refunds less silently |
+| R42-5 | Caregiver | Message "Visit X cancelled"; visit greyed in tasks and time freed; the kept part of an 80% / 0% refund is split 85/15 as normal (paid out in E13) |
+| R42-6 | Whole order | All visits cancelled → order shows Cancelled; promo use given back only when that is a 100% refund |
+| R42-7 | Confirm popup | "Cancel 2 visits? RM56 will be refunded. This can't be undone." OK / Cancel |
+
+### Round 43 · 8 Nov 2026 · KF decision (E10-2 per-visit results)
+| # | Question | Decision |
+|---|---|---|
+| R43-1 | Partial success | Visits that can still be cancelled go ahead and stay cancelled; only those that cannot are left as they are |
+| R43-2 | Result list | O15 lists every ticked visit: "✓ Cancelled · RMx back" or red "✗ Not cancelled: the caregiver has already arrived / its time has started / it was already cancelled" |
+| R43-3 | Amount changed | Unchanged (R42-4): any ticked visit's % changed → nothing cancelled, confirm the new amounts again |
+| R43-4 | Refund cannot start | Visit stays cancelled; line says "Refund being processed"; retried automatically every few minutes; admin sees it in Payments; full tracking in E10-3 |
+| R43-5 | Messages | Caregiver and owner messages list only the visits actually cancelled |
+
+### Round 44 · 8 Nov 2026 · KF decision (E10-3 track refunds)
+| # | Question | Decision |
+|---|---|---|
+| R44-1 | Entry | O13 Refund card gets "Details ›" which opens O16 |
+| R44-2 | Summary | Top shows "Due RMx · Refunded RMy · On its way RMz" (money only); credit back shown separately |
+| R44-3 | Refund lines | One line per refund: reason (Withdrawn / Not accepted / Visit N cancelled …), amount, status "On its way" / "Refunded 8 Nov" / "Being processed"; the owner never sees "failed" |
+| R44-4 | Failed refunds | Retried automatically up to 3 times a few minutes apart; then an admin alert; admin can retry from Payments |
+| R44-5 | Message | Owner gets "Refund received: RMx" once the bank confirms |
+| R44-6 | No restore | A cancelled visit is never restored |
+| R44-7 | Extra fees | Extra-fee refunds come with E11; nothing shown now |
+
+### Round 45 · 9 Nov 2026 · KF decision (E11-1 request waiting)
+| # | Question | Decision |
+|---|---|---|
+| R45-1 | Where | S10 gets "Owner asked me to wait", shown only after "I've arrived" and before entry is confirmed |
+| R45-2 | Clock | Waiting counts from the later of booked start and arrival; stops when the caregiver is let in; caregiver lateness never charges the owner; the clock keeps running while the owner pays |
+| R45-3 | Fee | First 10 min free, then RM5 per started 10 min, max 60 min / RM25 (11 min = RM5, 75 min = RM25); S14 shows live minutes and fee |
+| R45-4 | Prepay | The request asks the owner to prepay the full RM25; unused part refunded in E11-4; let in within the free 10 min → nothing to pay |
+| R45-5 | Scope | This story: caregiver sends the request, owner gets a message; owner approve and pay in E11-3 |
+| R45-6 | At 60 min | S14 shows "Waiting limit reached"; WhatsApp help stays; "No handover" in a later story |
+
+### Round 46 · 9 Nov 2026 · KF decision (E11-2 request overtime)
+| # | Question | Decision |
+|---|---|---|
+| R46-1 | Where | S11 "Ask for overtime" works only while the visit is in service; opens S14 on Overtime |
+| R46-2 | How much | 15-min units at RM10 each, up to the caregiver's own overtime limit (0/15/30/45/60 min) |
+| R46-3 | Schedule check | New end must not run into the next booked visit plus travel buffer, or a "Not available" block; S14 shows "Fits (next visit 11:30)" or "Clashes with your 11:30 visit"; Send off on a clash |
+| R46-4 | After sending | Owner gets a message; approve and pay in E11-3; until paid, only the original service |
+| R46-5 | One at a time | One open overtime request per visit; the caregiver can withdraw it before the owner pays |
+
+### Round 47 · 10 Nov 2026 · KF decision (E11-3 approve and pay extra fees)
+| # | Question | Decision |
+|---|---|---|
+| R47-1 | Where | An open waiting or overtime request shows an "Extra fee to approve" card on the order; the caregiver's message opens it too; both lead to O19 (what, how much, "Fits her schedule" for overtime) |
+| R47-2 | Overtime | "Approve and pay RMx" → same pay page as booking; once paid S11 says "Owner paid · you may stay until 6:11 pm"; Decline tells the caregiver and only the booked service goes ahead |
+| R47-3 | Waiting | Owner pays the RM25 prepay, or taps "Let them in now" (free within 10 min); no Decline |
+| R47-4 | Not paid in time | Overtime request lapses when the booked service time ends; an unpaid wait stays unpaid (no-handover in a later story) |
+| R47-5 | After paying | The caregiver can no longer withdraw; unused minutes refunded in E11-4; a failed payment can be tried again and the request stays open |

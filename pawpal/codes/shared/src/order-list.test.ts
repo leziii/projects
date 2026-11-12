@@ -31,6 +31,7 @@ describe('E7-2 order detail', () => {
   it('gives each visit the order\'s status (R31-3)', () => {
     expect(visitStatus({ status: 'pending_accept' })).toBe('Waiting for caregiver');
     expect(visitStatus({ status: 'accepted' })).toBe('Booked');
+    expect(visitStatus({ status: 'cancelled' }, { status: 'cancelled' })).toBe('Cancelled');
     expect(visitStatus({ status: 'accepted' }, { status: 'arrived' })).toBe('Caregiver arrived');
     expect(visitStatus({ status: 'accepted' }, { status: 'in_service' })).toBe('In service');
     expect(visitStatus({ status: 'failed' })).toBe('Not going ahead');

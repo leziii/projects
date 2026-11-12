@@ -1,5 +1,5 @@
 import { clearAdminToken, getAdminToken } from '../session';
-import { formatRM, PAYMENT_METHODS, type MockOutcome, type Payment, type PaymentStatus } from '@pawpal/shared';
+import { formatRM, PAYMENT_METHODS, type MockOutcome, type Payment, type PaymentStatus, type StuckRefund } from '@pawpal/shared';
 
 export type WebhookResult = 'applied' | 'duplicate' | 'ignored' | 'unmatched' | 'none';
 
@@ -53,6 +53,9 @@ export const createPayout = (amountSen: number, payee: string, f?: typeof fetch)
 export const simulate = (id: number, outcome: MockOutcome, f?: typeof fetch) =>
   api<SimResult>(`/mock-gateway/payments/${id}/outcome`, { outcome }, f);
 export const resendWebhook = (id: number, f?: typeof fetch) => api<SimResult>(`/mock-gateway/payments/${id}/resend`, {}, f);
+/** E10-3 (R44-4): refunds that failed every automatic try, and sending one again. */
+export const listStuckRefunds = (f?: typeof fetch) => api<StuckRefund[]>('/admin/refunds/stuck', undefined, f);
+export const retryRefund = (orderId: number, key: string, f?: typeof fetch) => api<StuckRefund[]>('/admin/refunds/retry', { orderId, key }, f);
 export const queryPayment = (id: number, f?: typeof fetch) => api<Payment>(`/payments/${id}/query`, {}, f);
 
 const STATUS: Record<PaymentStatus, { label: string; tag: 'info' | 'warning' | 'success' | 'danger' }> = {

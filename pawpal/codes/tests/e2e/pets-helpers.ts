@@ -5,7 +5,8 @@ const year = new Date().getFullYear();
 const month = String(new Date().getMonth() + 1);
 
 /** A name no earlier test run used, so the admin queue row is easy to find. */
-export const petName = (base: string) => `${base}${Math.floor(Math.random() * 1e5)}`;
+// 1e8: the test database keeps every run, so a shorter number repeated sometimes (E10-3 run).
+export const petName = (base: string) => `${base}${Math.floor(Math.random() * 1e8)}`;
 
 /** Adds a cat on the mobile My pets page. */
 export async function addCat(page: Page, name: string, opts: { born?: number; vaccinated?: boolean } = {}) {

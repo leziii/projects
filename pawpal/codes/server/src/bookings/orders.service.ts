@@ -46,6 +46,8 @@ import { PromosService } from '../promos/promos.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { ScheduleService } from '../caregivers/schedule.service';
 import { BookingsService } from './bookings.service';
+import { RefundsService } from './refunds.service';
+import { ExtraFeesService } from './extra-fees.service';
 import { ReviewsService } from './reviews.service';
 import { VisitRunsService, runKey } from './visit-runs.service';
 
@@ -102,6 +104,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     private readonly runs: VisitRunsService,
     private readonly files: FileStore,
     private readonly reviews: ReviewsService,
+    private readonly refunds: RefundsService,
+    private readonly fees: ExtraFeesService,
   ) {}
 
   onModuleInit() {
@@ -269,10 +273,14 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const runs = await this.runs.forOrders([id]);
     return {
       ...view,
+      // R44-2: what is due counts refunds still being processed.
+      refundSen: await this.refunds.dueSen(id),
       refundDoneSen: done.rows[0].sen,
       address: address && area ? { ...address, area } : null,
       runs: view.visits.map((_, i) => runs.get(runKey(id, i)) ?? NOT_STARTED),
       review: await this.reviews.stateOf(id),
+      // E11-3 (R47-1): requests waiting for the owner.
+      extraFees: (await this.fees.forOrder(user, id)).filter((f) => f.status === 'requested'),
     };
   }
 
@@ -297,6 +305,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         );
       }
       await this.history.record(client, { entity: 'visit', entityId: id, from: 'arrived', to: 'in_service', actor: owner(user), reason: `Owner confirmed entry for visit ${index + 1}` });
+      await this.fees.afterEntry(client, id, index);
       await this.messages.send(client, {
         userId: o.caregiver_id,
         role: 'caregiver',
@@ -330,6 +339,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     let charge = await this.payments.get(order.charge_id);
     if (charge.status === 'checking') charge = await this.payments.query(charge.id); // callback late or lost: ask the gateway
     if (charge.status !== 'succeeded') return;
+    // E10-1: an order whose visits were all cancelled after acceptance was refunded per visit, never in full here.
+    if (order.end_reason === 'cancelled') return;
     if (order.status === 'cancelled' || order.status === 'failed') {
       await this.refund(order, charge.id, charge.amountSen);
       return;

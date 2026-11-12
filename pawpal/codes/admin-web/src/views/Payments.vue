@@ -7,6 +7,29 @@
       title="Mock gateway: no real money. Create a payment, then choose what the bank does."
       style="max-width: 900px; margin-bottom: 16px"
     />
+    <div v-if="stuck.length" class="stuck" data-test="stuck-refunds">
+      <el-alert type="error" :closable="false" :title="`${stuck.length} refund${stuck.length === 1 ? '' : 's'} failed every automatic try. Check the reason, then send again.`" style="margin-bottom: 8px" />
+      <el-table :data="stuck" style="max-width: 1100px; margin-bottom: 20px">
+        <el-table-column prop="number" label="Order" width="160" />
+        <el-table-column prop="reason" label="Refund for" min-width="150" />
+        <el-table-column label="Amount" width="100">
+          <template #default="{ row }">{{ formatRM(row.amountSen) }}</template>
+        </el-table-column>
+        <el-table-column prop="tries" label="Tries" width="70" />
+        <el-table-column label="Last failure" min-width="200">
+          <template #default="{ row }">
+            <div class="reason">{{ row.lastFailure ?? 'No reason given' }}</div>
+            <div class="who">{{ row.failedAt }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="120">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" :data-test="`retry-${row.orderId}-${row.key}`" @click="retry(row)">Send again</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
     <el-form inline data-test="new-payment" @submit.prevent>
       <el-form-item label="Amount (RM)">
         <el-input v-model="amount" style="width: 110px" data-test="amount" />
@@ -77,7 +100,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { isFinalPayment, PAYMENT_METHODS, rmToSen, type MockOutcome, type Payment, type PaymentMethod, type StatusChange } from '@pawpal/shared';
+import { formatRM, isFinalPayment, PAYMENT_METHODS, rmToSen, type MockOutcome, type Payment, type PaymentMethod, type StatusChange, type StuckRefund } from '@pawpal/shared';
 import { fetchHistory, stepLabel, whoWhy } from '../api/history';
 import {
   amountLabel,
@@ -85,6 +108,8 @@ import {
   createPayout,
   createRefund,
   listPayments,
+  listStuckRefunds,
+  retryRefund,
   paymentDetail,
   queryPayment,
   resendWebhook,
@@ -96,6 +121,7 @@ import {
 } from '../api/payments';
 
 const payments = ref<Payment[]>([]);
+const stuck = ref<StuckRefund[]>([]);
 const amount = ref('40');
 const method = ref<PaymentMethod>('tng');
 
@@ -107,7 +133,7 @@ const historyId = ref(0);
 const history = ref<StatusChange[]>([]);
 
 async function reload() {
-  payments.value = await listPayments();
+  [payments.value, stuck.value] = await Promise.all([listPayments(), listStuckRefunds()]);
   if (historyOpen.value) history.value = await fetchHistory('payment', historyId.value);
 }
 
@@ -142,6 +168,8 @@ async function runSim(action: () => Promise<SimResult>) {
 }
 
 const sim = (id: number, outcome: MockOutcome) => runSim(() => simulate(id, outcome));
+
+const retry = (r: StuckRefund) => run(() => retryRefund(r.orderId, r.key), `Refund for ${r.number} sent again`);
 
 async function refund(p: Payment) {
   try {

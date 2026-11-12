@@ -37,11 +37,21 @@
 
     <text v-if="actionError" class="error" data-test="action-error">{{ actionError }}</text>
 
+    <view v-if="v.overtime" class="card" data-test="overtime-open">
+      <template v-if="v.overtime.status === 'paid'">
+        <text class="strong" data-test="overtime-paid">Owner paid · you may stay until {{ overtimeUntilText(v, v.overtime.units) }}</text>
+        <text class="note">Overtime {{ overtimeText(v.overtime.units) }}</text>
+      </template>
+      <template v-else>
+        <text class="strong">Overtime asked: {{ overtimeText(v.overtime.units) }}</text>
+        <text class="note">Waiting for the owner to approve and pay. Until then, do only the booked service.</text>
+      </template>
+    </view>
     <view class="later-row">
-      <button class="ghost" data-test="overtime" disabled>Request overtime</button>
+      <button class="ghost" data-test="overtime" @click="openOvertime">{{ v.overtime ? 'Overtime request' : 'Ask for overtime' }}</button>
       <button class="ghost" data-test="problem" disabled>Report a problem</button>
     </view>
-    <text class="note center" data-test="later-note">Coming later</text>
+    <text class="note center" data-test="later-note">Report a problem: coming later</text>
 
     <text v-if="photoState !== 'none'" class="note center" data-test="finish-wait">{{ photoState === 'failed' ? 'A photo failed to upload. Tap ↻ to try again, or remove it' : 'Waiting for photos to upload' }}</text>
     <button class="primary" data-test="finish" :disabled="busy || photoState !== 'none'" @click="finish">Finish, write report</button>
@@ -73,6 +83,7 @@ import { requireUser } from '@/api/auth';
 import { checkItem, getVisit } from '@/api/requests';
 import VisitPhotos from '@/components/VisitPhotos.vue';
 import { confirmBox } from '@/order-actions';
+import { overtimeText, overtimeUntilText } from '@pawpal/shared';
 
 const v = ref<VisitTask | null>(null);
 const error = ref('');
@@ -87,6 +98,9 @@ let timer: ReturnType<typeof setInterval> | undefined;
 /** R36-2: from the entry time, updated every minute. */
 const served = computed(() => (v.value?.enteredAt ? servedMinutes(v.value.enteredAt, now.value) : 0));
 const clockOf = (at: string) => timeText(Number(at.slice(11, 13)) * 60 + Number(at.slice(14, 16)));
+
+/** E11-2 (R46-1): S14 Overtime. */
+const openOvertime = () => uni.navigateTo({ url: `/pages/caregiver/overtime?id=${id.value}&i=${index.value}` });
 
 function show(next: VisitTask) {
   v.value = next;

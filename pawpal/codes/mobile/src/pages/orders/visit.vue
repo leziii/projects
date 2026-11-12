@@ -6,6 +6,7 @@
         <text class="tag" :class="result.tone" data-test="visit-status">{{ visitStatus(order, run) }}</text>
       </view>
       <text class="note" data-test="visit-service">{{ serviceText(order.level, visit.quote) }} · {{ order.number }}</text>
+      <text v-if="run.cancel" class="cancelled" data-test="visit-cancelled">{{ cancelledText(run.cancel) }}</text>
     </view>
 
     <view class="card">
@@ -43,6 +44,7 @@
       <text v-if="visit.paidSen < visit.quote.total" class="note">After your promo and credit.</text>
     </view>
 
+    <button v-if="cancellable" class="danger-ghost" data-test="cancel-visit" @click="openCancel">Cancel this visit</button>
     <view class="card"><HelpButton :order-no="order.number" label="Help with this visit" /></view>
   </view>
   <view v-else-if="error" class="content">
@@ -58,6 +60,8 @@ import {
   ENTRY_METHOD_LABEL,
   NOT_STARTED,
   arrivedText,
+  canCancelVisit,
+  cancelledText,
   confirmedText,
   enteredText,
   formatRM,
@@ -103,6 +107,10 @@ const reportLine = computed(() => {
   return reportReadyText(r.reportedAt!, new Date());
 });
 
+/** R42-2: opens O15 with this visit ticked. */
+const cancellable = computed(() => !!order.value && canCancelVisit(order.value.status, run.value, visit.value!, new Date()));
+const openCancel = () => uni.navigateTo({ url: `/pages/orders/cancel?id=${id}&i=${index}` });
+
 const viewReport = () => uni.navigateTo({ url: `/pages/orders/report?id=${id}&i=${index}` });
 
 async function confirm() {
@@ -147,4 +155,6 @@ onPullDownRefresh(async () => {
 .error { color: var(--pp-danger); }
 .primary { width: 100%; margin-top: 8rpx; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
+.cancelled { font-size: 26rpx; font-weight: 600; color: var(--pp-danger); }
+.danger-ghost { width: 100%; background: var(--pp-surface); color: var(--pp-danger); border: 1px solid var(--pp-danger); border-radius: var(--pp-radius-button); }
 </style>

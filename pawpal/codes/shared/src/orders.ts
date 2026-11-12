@@ -13,7 +13,8 @@ import { addDays, dayText, klDate, timeText } from './schedule';
  */
 export type OrderStatus = 'awaiting_payment' | 'pending_accept' | 'accepted' | 'cancelled' | 'failed';
 /** Why a paid order failed: paid under 3 h before (R22-4), the caregiver said no (R26-5), or no answer in time (E6-3). */
-export type OrderEnd = 'too_late' | 'rejected' | 'timeout' | 'withdrawn';
+/** 'cancelled': the owner cancelled every visit (E10-1, R42-6). */
+export type OrderEnd = 'too_late' | 'rejected' | 'timeout' | 'withdrawn' | 'cancelled';
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   awaiting_payment: 'Waiting for payment',
@@ -148,6 +149,7 @@ export function payResult(o: ResultInput, now: Date, stopped = false): PayResult
     // R28-5
     return { title: 'Booking withdrawn', body: `You withdrew this booking.${refund || ' A full refund is on its way.'}`, tone: 'bad', retry: false, polling: false };
   }
+  if (o.status === 'cancelled' && o.endReason === 'cancelled') return { title: 'Order cancelled', body: `You cancelled every visit.${o.refundSen ? ` ${formatRM(o.refundSen)} is refunded.` : ''}`, tone: 'bad', retry: false, polling: false };
   if (o.status === 'cancelled') return { title: 'Order cancelled', body: `This order was replaced when the booking changed.${refund}`, tone: 'bad', retry: false, polling: false };
   if (o.payment?.status === 'failed') return { title: 'Payment failed', body: `${o.payment.failureReason ?? 'The bank said no'}. Nothing was charged. You can try again.`, tone: 'bad', retry: true, polling: false };
   if (stopped) return { title: 'Still checking', body: 'Still checking. We will message you when we know. Pull down to check again.', tone: 'wait', retry: false, polling: false };

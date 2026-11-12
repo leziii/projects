@@ -1,4 +1,4 @@
-import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review } from '@pawpal/shared';
+import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review, OvertimeInfo } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export interface CaregiverHome {
@@ -21,6 +21,12 @@ export const getTasks = (date?: string) => api<TaskList>(`/caregiver/tasks${date
 export const getVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}`);
 /** S10 (E8-3): "I've arrived", and for Pre-authorised the caregiver's entry confirm. */
 export const arriveVisit = (orderId: number, i: number, location: GeoPoint | null) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/arrive`, { location });
+/** S10 → S14 (E11-1, R45-1): the owner asked the caregiver to wait. */
+export const waitVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/wait`, {});
+/** S14 Overtime (E11-2, R46-2 … R46-5) */
+export const getOvertime = (orderId: number, i: number) => api<OvertimeInfo>(`/caregiver/tasks/${orderId}/${i}/overtime`);
+export const askOvertime = (orderId: number, i: number, units: number) => api<OvertimeInfo>(`/caregiver/tasks/${orderId}/${i}/overtime`, { units });
+export const withdrawOvertime = (orderId: number, i: number) => api<OvertimeInfo>(`/caregiver/tasks/${orderId}/${i}/overtime/withdraw`, {});
 export const enterVisit = (orderId: number, i: number) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/enter`, {});
 /** S11 (E8-4): tick an item, add or delete a photo, see a photo (private, so loaded with the login token). */
 export const checkItem = (orderId: number, i: number, item: CheckItem, done: boolean) => api<VisitTask>(`/caregiver/tasks/${orderId}/${i}/check`, { item, done });

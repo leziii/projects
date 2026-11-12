@@ -1,4 +1,4 @@
-import type { AppliedPromo, BookingDraft, CaregiverOption, DraftInput, EntryInfo, MockOutcome, OrderDetail, OrderFilter, OrderPage, OrderView, PayProblem, PaymentMethod, VisitCase, VisitReport, OrderReview } from '@pawpal/shared';
+import type { AppliedPromo, CancelPreview, CancelResult, BookingDraft, CaregiverOption, DraftInput, EntryInfo, MockOutcome, OrderDetail, OrderFilter, OrderPage, OrderView, PayProblem, PaymentMethod, VisitCase, VisitReport, OrderReview, OrderRefunds, ExtraFee } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export const getDraft = () => api<BookingDraft>('/bookings/draft');
@@ -27,6 +27,10 @@ export const getOrders = (filter: OrderFilter, before?: number) => api<OrderPage
 export const getOrderDetail = (id: number) => api<OrderDetail>(`/orders/${id}/detail`);
 /** O14 (E8-3, R35-4): the owner lets the arrived caregiver in. */
 export const confirmEntry = (id: number, i: number) => api<OrderDetail>(`/orders/${id}/visits/${i}/confirm-entry`, {});
+/** O19 (E11-3, R47-1 … R47-5) */
+export const getExtraFees = (id: number) => api<ExtraFee[]>(`/orders/${id}/extra-fees`);
+export const payExtraFee = (id: number, feeId: number, method: PaymentMethod) => api<{ fee: ExtraFee; paymentId: number }>(`/orders/${id}/extra-fees/${feeId}/pay`, { method });
+export const declineExtraFee = (id: number, feeId: number) => api<ExtraFee>(`/orders/${id}/extra-fees/${feeId}/decline`, {});
 /** O17 (E9-1): a visit's sent report, by order and visit or by the message link's run id. */
 export const getReport = (id: number, i: number) => api<VisitReport>(`/orders/${id}/visits/${i}/report`);
 export const getReportByRun = (runId: number) => api<VisitReport>(`/reports/${runId}`);
@@ -63,6 +67,13 @@ export async function reportPhotoUrl(id: number, i: number, photoId: number): Pr
   if (!res.ok) throw new ApiError('NO_PHOTO', 'Could not load the photo', res.status);
   return URL.createObjectURL(await res.blob());
 }
+/** E10-1 O15 (R42-1 … R42-4) */
+export const getCancelPreview = (id: number) => api<CancelPreview>(`/orders/${id}/cancel`);
+export const cancelVisits = (id: number, visits: number[], percents: number[]) => api<CancelResult>(`/orders/${id}/cancel`, { visits, percents });
+
+/** E10-3 O16 (R44-1 … R44-3) */
+export const getOrderRefunds = (id: number) => api<OrderRefunds>(`/orders/${id}/refunds`);
+
 /** E9-3 O21 (R41-2) */
 export const rateOrder = (id: number, stars: number, comment: string) => api<OrderReview>(`/orders/${id}/review`, { stars, comment });
 
