@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START_OPTIONS, addTestVisit, expireRequest, visitSoon, markOrderSettled, STATUS_OPTIONS, alertSummary, sendRequestAlert, sendTestMessage, setCaregiverStatus } from './dev';
+import { START_OPTIONS, addTestVisit, expireRequest, visitShift, visitSoon, markOrderSettled, STATUS_OPTIONS, alertSummary, sendRequestAlert, sendTestMessage, setCaregiverStatus } from './dev';
 
 describe('admin test tools', () => {
   it('posts the caregiver status with a reason', async () => {
@@ -83,5 +83,15 @@ describe('admin test tools', () => {
     }) as unknown as typeof fetch;
     expect(await visitSoon(' p20261102001 ', 2, fake)).toMatchObject({ start: 600 });
     expect(JSON.parse(body)).toEqual({ number: 'P20261102001', index: 1 });
+  });
+
+  it('passes time for a visit, counting visits from 1 (E11-4)', async () => {
+    let body = '';
+    const fake = (async (_u: string, init?: RequestInit) => {
+      body = String(init?.body);
+      return new Response(JSON.stringify({ number: 'P20261102001', start: 575 }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await visitShift(' p20261102001 ', 1, 35, fake)).toMatchObject({ start: 575 });
+    expect(JSON.parse(body)).toEqual({ number: 'P20261102001', index: 0, minutes: 35 });
   });
 });

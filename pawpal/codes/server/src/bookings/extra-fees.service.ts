@@ -3,8 +3,11 @@ import {
   PAY_METHODS,
   RuleError,
   WAITING_RULES,
+  OVERTIME_RULES,
   formatRM,
+  minuteOfDay,
   overtimeText,
+  overtimeUsedUnits,
   overtimeUntilText,
   serviceEndMin,
   visitTime,
@@ -12,6 +15,7 @@ import {
   type ExtraFee,
   type ExtraFeeKind,
   type ExtraFeeStatus,
+  type ExtraFeeUsed,
   type OrderVisit,
   type PaymentMethod,
   type PaymentStatus,
@@ -44,10 +48,23 @@ interface FeeRow {
   entry_method: ExtraFee['entryMethod'];
   arrived: string | null;
   entered: string | null;
+  used_min: number | null;
+  used_sen: number | null;
 }
 
+interface Charge {
+  id: number;
+  status: PaymentStatus;
+  method: PaymentMethod | null;
+  amount_sen: number;
+}
+
+/** E11-4 (R48-3): the refund of an unused fee shows on O16 as order-12-refund-w5 (waiting) or -o5 (overtime). */
+const unusedRef = (orderId: number, kind: ExtraFeeKind, feeId: number) => `order-${orderId}-refund-${kind === 'waiting' ? 'w' : 'o'}${feeId}`;
+
 const SELECT = `SELECT f.id, f.order_id, o.number, o.owner_id, o.caregiver_id, c.display_name, f.idx, f.kind, f.units, f.amount_sen, f.status,
-    ${ts('f.requested_at')} AS requested, ${ts('f.paid_at')} AS paid, o.visits, o.entry_method, ${ts('r.arrived_at')} AS arrived, ${ts('r.entered_at')} AS entered
+    ${ts('f.requested_at')} AS requested, ${ts('f.paid_at')} AS paid, o.visits, o.entry_method, ${ts('r.arrived_at')} AS arrived, ${ts('r.entered_at')} AS entered,
+    f.used_min, f.used_sen
   FROM extra_fees f JOIN orders o ON o.id = f.order_id JOIN caregiver_profiles c ON c.user_id = o.caregiver_id
   LEFT JOIN visit_runs r ON r.order_id = f.order_id AND r.idx = f.idx`;
 
@@ -117,14 +134,49 @@ export class ExtraFeesService implements OnModuleInit {
     );
   }
 
-  /** R47-3: let in within the free 10 minutes (or before waiting began) → nothing to pay. Called inside the entry transaction. */
-  async afterEntry(client: PoolClient, orderId: number, index: number): Promise<void> {
-    const { rows } = await client.query<FeeRow>(`${SELECT} WHERE f.order_id = $1 AND f.idx = $2 AND f.kind = 'waiting' AND f.status = 'requested'`, [orderId, index]);
+  /**
+   * R47-3, R48-1: called inside the entry transaction, when waiting stops. Let in within the free 10 minutes → nothing to pay;
+   * not paid yet → the owner now owes only what was used; prepaid → what was used is recorded and the rest goes back
+   * (sent by settleUnused once the entry is saved).
+   */
+  async afterEntry(client: PoolClient, orderId: number, index: number, now = new Date()): Promise<void> {
+    const { rows } = await client.query<FeeRow>(`${SELECT} WHERE f.order_id = $1 AND f.idx = $2 AND f.kind = 'waiting' AND f.status IN ('requested', 'paid')`, [orderId, index]);
     const r = rows[0];
     if (!r || !r.entered) return;
     const v = r.visits[index];
-    if (waitingState({ date: v.date, start: v.start, arrivedAt: r.arrived, enteredAt: r.entered }, new Date()).feeSen === 0) {
-      await client.query("UPDATE extra_fees SET status = 'not_needed', updated_at = now() WHERE id = $1 AND status = 'requested'", [r.id]);
+    const w = waitingState({ date: v.date, start: v.start, arrivedAt: r.arrived, enteredAt: r.entered }, now);
+    if (r.status === 'requested' && w.feeSen === 0) {
+      await client.query("UPDATE extra_fees SET status = 'not_needed', used_min = $2, used_sen = 0, updated_at = now() WHERE id = $1 AND status = 'requested'", [r.id, w.minutes]);
+    } else if (r.status === 'requested') {
+      await client.query('UPDATE extra_fees SET amount_sen = $2, used_min = $3, used_sen = $2, updated_at = now() WHERE id = $1', [r.id, w.feeSen, w.minutes]);
+    } else {
+      await client.query('UPDATE extra_fees SET used_min = $2, used_sen = $3, updated_at = now() WHERE id = $1', [r.id, w.minutes, w.feeSen]);
+    }
+  }
+
+  /** R48-2: called inside the report transaction; paid overtime is counted in started 15-min units from the service end. */
+  async afterReport(client: PoolClient, orderId: number, index: number, reportedAt: string): Promise<void> {
+    const { rows } = await client.query<FeeRow>(`${SELECT} WHERE f.order_id = $1 AND f.idx = $2 AND f.kind = 'overtime' AND f.status = 'paid'`, [orderId, index]);
+    const r = rows[0];
+    if (!r) return;
+    const v = r.visits[index];
+    const over = minuteOfDay(reportedAt) - serviceEndMin({ start: v.start, minutes: v.quote.totalMinutes, enteredAt: r.entered });
+    const units = overtimeUsedUnits(over, r.units);
+    await client.query('UPDATE extra_fees SET used_min = $2, used_sen = $3, updated_at = now() WHERE id = $1', [r.id, units * OVERTIME_RULES.unitMin, units * OVERTIME_RULES.unitSen]);
+  }
+
+  /** R48-1, R48-2: send back what a paid fee did not use. Safe to call again: each fee is refunded once. */
+  async settleUnused(orderId: number, index: number): Promise<void> {
+    const { rows } = await this.db.pool.query<FeeRow>(`${SELECT} WHERE f.order_id = $1 AND f.idx = $2 AND f.status = 'paid' AND f.used_sen IS NOT NULL`, [orderId, index]);
+    for (const r of rows) {
+      const charge = await this.paidCharge(Number(r.id));
+      if (!charge || charge.amount_sen <= r.used_sen!) continue;
+      const ref = unusedRef(orderId, r.kind, Number(r.id));
+      const sent = await this.db.pool.query('SELECT 1 FROM payments WHERE ref LIKE $1', [`${ref}%`]);
+      if (sent.rowCount) continue;
+      const back = charge.amount_sen - r.used_sen!;
+      this.log.log(`Fee ${r.id} used ${formatRM(r.used_sen!)}; refunding ${formatRM(back)}`);
+      await this.payments.createRefund({ ref, chargeId: charge.id, amountSen: back }).catch((e: Error) => this.log.error(`Refund ${ref} could not start: ${e.message}`));
     }
   }
 
@@ -162,6 +214,7 @@ export class ExtraFeesService implements OnModuleInit {
       }
       return true;
     });
+    if (paid) await this.settleUnused(fee.orderId, fee.index);
     if (!paid) {
       // The request closed (lapsed, declined, let in) while the payment was going through.
       this.log.warn(`Fee ${feeId} was paid after it closed; refunding ${formatRM(p.amountSen)}`);
@@ -175,12 +228,35 @@ export class ExtraFeesService implements OnModuleInit {
     return fee;
   }
 
-  private async latestCharge(feeId: number): Promise<{ id: number; status: PaymentStatus; method: PaymentMethod | null } | null> {
-    const { rows } = await this.db.pool.query<{ id: number; status: PaymentStatus; method: PaymentMethod | null }>(
-      "SELECT id, status, method FROM payments WHERE kind = 'charge' AND ref LIKE $1 ORDER BY id DESC LIMIT 1",
+  private async latestCharge(feeId: number): Promise<Charge | null> {
+    const { rows } = await this.db.pool.query<Charge>(
+      "SELECT id, status, method, amount_sen FROM payments WHERE kind = 'charge' AND ref LIKE $1 ORDER BY id DESC LIMIT 1",
       [`fee-${feeId}-%`],
     );
     return rows[0] ? { ...rows[0], id: Number(rows[0].id) } : null;
+  }
+
+  private async paymentOf(feeId: number): Promise<ExtraFee['payment']> {
+    const c = await this.latestCharge(feeId);
+    return c ? { id: c.id, status: c.status, method: c.method } : null;
+  }
+
+  private async paidCharge(feeId: number): Promise<Charge | null> {
+    const { rows } = await this.db.pool.query<Charge>(
+      "SELECT id, status, method, amount_sen FROM payments WHERE kind = 'charge' AND status = 'succeeded' AND ref LIKE $1 ORDER BY id DESC LIMIT 1",
+      [`fee-${feeId}-%`],
+    );
+    return rows[0] ? { ...rows[0], id: Number(rows[0].id) } : null;
+  }
+
+  /** R48-3: what was used and what went back. */
+  private async usedOf(r: FeeRow): Promise<ExtraFeeUsed | null> {
+    if (r.used_sen === null || r.used_min === null) return null;
+    const charge = r.status === 'paid' ? await this.paidCharge(Number(r.id)) : null;
+    const refundSen = charge ? Math.max(0, charge.amount_sen - r.used_sen) : 0;
+    if (!refundSen) return { minutes: r.used_min, sen: r.used_sen, refundSen: 0, refund: null };
+    const back = await this.db.pool.query<{ status: PaymentStatus }>('SELECT status FROM payments WHERE kind = \'refund\' AND ref LIKE $1', [`${unusedRef(Number(r.order_id), r.kind, Number(r.id))}%`]);
+    return { minutes: r.used_min, sen: r.used_sen, refundSen, refund: back.rows.some((b) => b.status === 'succeeded') ? 'refunded' : 'on_its_way' };
   }
 
   private async toFee(r: FeeRow): Promise<ExtraFee> {
@@ -199,7 +275,8 @@ export class ExtraFeesService implements OnModuleInit {
       caregiver: shortName(r.display_name),
       visit: { date: v.date, start: v.start, minutes: v.quote.totalMinutes, arrivedAt: r.arrived, enteredAt: r.entered },
       entryMethod: r.entry_method,
-      payment: await this.latestCharge(Number(r.id)),
+      payment: await this.paymentOf(Number(r.id)),
+      used: await this.usedOf(r),
     };
   }
 

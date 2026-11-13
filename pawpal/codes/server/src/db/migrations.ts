@@ -709,4 +709,12 @@ export const MIGRATIONS: Migration[] = [
       "CREATE UNIQUE INDEX extra_fees_paid ON extra_fees (order_id, idx, kind) WHERE status = 'paid'",
     ],
   },
+  {
+    id: '037_extra_fee_used',
+    sql: [
+      // E11-4 (round 48): what was used once waiting stopped or the report was sent; the rest of the payment goes back.
+      'ALTER TABLE extra_fees ADD COLUMN used_min INT NULL',
+      'ALTER TABLE extra_fees ADD COLUMN used_sen INT NULL CHECK (used_sen >= 0)',
+    ],
+  },
 ];

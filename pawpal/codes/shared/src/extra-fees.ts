@@ -28,11 +28,38 @@ export interface ExtraFee {
   entryMethod: 'pre_authorised' | 'live_confirm';
   /** The latest try at paying it. */
   payment: { id: number; status: PaymentStatus; method: PaymentMethod | null } | null;
+  /** E11-4 (R48-1 … R48-3): what was used once waiting stopped or the report was sent, and the money sent back. */
+  used: ExtraFeeUsed | null;
+}
+
+export interface ExtraFeeUsed {
+  minutes: number;
+  sen: number;
+  refundSen: number;
+  /** on_its_way = sent back, bank not done · refunded = bank confirmed · null = nothing to send back. */
+  refund: 'on_its_way' | 'refunded' | null;
+}
+
+/** R48-2: overtime used, in started 15-min units, never more than was paid. Minutes are after the service end. */
+export const overtimeUsedUnits = (minutesOver: number, paidUnits: number) =>
+  Math.min(paidUnits, Math.max(0, Math.ceil(minutesOver / OVERTIME_RULES.unitMin)));
+
+/** "2026-11-08 13:20:00" → minutes after midnight (KL). */
+export const minuteOfDay = (at: string) => Number(at.slice(11, 13)) * 60 + Number(at.slice(14, 16));
+
+/** R48-4: what the caregiver earned from paid overtime once the report is sent. */
+export const overtimeEarnedText = (usedMin: number, usedSen: number) => (usedSen ? `Overtime used ${usedMin} min · ${formatRM(usedSen)}` : 'Overtime not used · RM0');
+
+/** R48-3: "Used 25 min · RM10 · RM15 refunded" / "… RM15 on its way" / "Used 60 min · RM25". */
+export function extraFeeUsedText(u: ExtraFeeUsed): string {
+  const head = `Used ${u.minutes} min · ${formatRM(u.sen)}`;
+  if (!u.refundSen) return head;
+  return `${head} · ${formatRM(u.refundSen)} ${u.refund === 'refunded' ? 'refunded' : 'on its way back'}`;
 }
 
 /** When the service ends: the planned end, or later when entry was late (minutes after midnight, KL). */
 export function serviceEndMin(v: { start: number; minutes: number; enteredAt: string | null }): number {
-  const entered = v.enteredAt ? Number(v.enteredAt.slice(11, 13)) * 60 + Number(v.enteredAt.slice(14, 16)) : v.start;
+  const entered = v.enteredAt ? minuteOfDay(v.enteredAt) : v.start;
   return Math.max(v.start, entered) + v.minutes;
 }
 

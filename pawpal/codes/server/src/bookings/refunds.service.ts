@@ -17,8 +17,8 @@ import { DbService, ts } from '../db/db.service';
 import { MessagesService } from '../messages/messages.service';
 import { PaymentsService } from '../payments/payments.service';
 
-/** order-12-refund-v0, order-12-refund-34 (whole charge 34), each with retries -r1, -r2 … */
-const REF = /^order-(\d+)-refund-(v\d+|\d+)(?:-r(\d+))?$/;
+/** order-12-refund-v0, order-12-refund-34 (whole charge 34), order-12-refund-w5 / -o5 (unused extra fee 5), each with retries -r1, -r2 … */
+const REF = /^order-(\d+)-refund-([vwo]\d+|\d+)(?:-r(\d+))?$/;
 
 interface Attempt {
   id: number;
@@ -48,7 +48,7 @@ interface OrderRow {
   charge_id: number | null;
 }
 
-const keyOf = (part: string) => (part.startsWith('v') ? part : `full-${part}`);
+const keyOf = (part: string) => (/^[vwo]/.test(part) ? part : `full-${part}`);
 const baseOf = (orderId: number, key: string) => `order-${orderId}-refund-${key.startsWith('full-') ? key.slice(5) : key}`;
 
 /** E10-3 O16 (round 44): each refund of an order, retries of failed ones, and the admin's list of stuck ones. */
@@ -217,5 +217,5 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/** Whole-order refunds first, then visits in order. */
-const order = (key: string) => (key.startsWith('v') ? 1 + Number(key.slice(1)) : 0);
+/** Whole-order refunds first, then visits in order, then unused extra fees (E11-4). */
+const order = (key: string) => (key.startsWith('v') ? 1 + Number(key.slice(1)) : /^[wo]/.test(key) ? 1e6 + Number(key.slice(1)) : 0);

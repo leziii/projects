@@ -1500,6 +1500,85 @@ describe('E6-1 caregiver sees requests', () => {
     });
   });
 
+  describe('E11-4 refund unused extra fees', () => {
+    const nowMin = () => Math.floor(((Date.now() + 8 * 3_600_000) % 86_400_000) / 60_000);
+    const inService = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, fees: `/api/orders/${order.id}/extra-fees` };
+    };
+    /** The booked start was `ago` minutes ago and the caregiver arrived before it. */
+    const startedAgo = async (orderId: number, ago: number) => {
+      await db().query("UPDATE orders SET visits = jsonb_set(visits::jsonb, '{0,start}', to_jsonb($2::int))::json WHERE id = $1", [orderId, nowMin() - ago]);
+      await db().query("UPDATE visit_runs SET arrived_at = now() - make_interval(mins => $2::int) WHERE order_id = $1 AND idx = 0", [orderId, ago + 5]);
+    };
+
+    it('waiting: let in after 25 min → RM10 used, RM15 back on O16; unpaid → owes only what was used (R48-1, R48-3)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/wait`).set(auth(cg.token)).expect(200);
+      const fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      const { paymentId } = (await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number };
+      await succeed(paymentId);
+      await startedAgo(order.id, 25);
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+
+      const after = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      expect(after).toMatchObject({ status: 'paid', amountSen: 2500, used: { minutes: 25, sen: 1000, refundSen: 1500, refund: 'on_its_way' } });
+      const ref = `order-${order.id}-refund-w${fee.id}`;
+      const back = (await db().query('SELECT id, amount_sen, parent_id FROM payments WHERE ref = $1', [ref])).rows;
+      expect(back).toEqual([{ id: expect.anything(), amount_sen: 1500, parent_id: expect.anything() }]);
+      expect(Number(back[0].parent_id)).toBe(paymentId);
+      const o16 = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      expect(o16.lines.find((l) => l.key === `w${fee.id}`)).toMatchObject({ reason: 'Waiting: unused prepay', amountSen: 1500, state: 'on_its_way' });
+
+      await succeed(Number(back[0].id));
+      expect(((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0].used).toMatchObject({ refund: 'refunded' });
+      expect((await db().query("SELECT body FROM messages WHERE user_id = $1 AND title = 'Refund received: RM15'", [owner.id])).rows[0].body).toContain('Waiting: unused prepay');
+      // Sent once only.
+      await http().post(`/api/caregiver/tasks/${order.id}/0/enter`).set(auth(cg.token)).expect(409);
+      expect((await db().query('SELECT 1 FROM payments WHERE ref LIKE $1', [`${ref}%`])).rowCount).toBe(1);
+      const t = (await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(t.waitingAt).not.toBeNull();
+
+      // Not paid before the let in: the request now asks only for what was used.
+      const other = await inService();
+      await http().post(`/api/caregiver/tasks/${other.order.id}/0/wait`).set(auth(other.cg.token)).expect(200);
+      await startedAgo(other.order.id, 25);
+      await http().post(`/api/orders/${other.order.id}/visits/0/confirm-entry`).set(auth(other.owner.token)).expect(200);
+      const owed = ((await http().get(other.fees).set(auth(other.owner.token)).expect(200)).body as ExtraFee[])[0];
+      expect(owed).toMatchObject({ status: 'requested', amountSen: 1000, used: { minutes: 25, sen: 1000, refundSen: 0, refund: null } });
+    });
+
+    it('overtime: paid 30 min, report sent 10 min after the end → RM10 used, RM10 back (R48-2, R48-4)', async () => {
+      const { cg, owner, order, fees } = await inService();
+      await http().post(`/api/orders/${order.id}/visits/0/confirm-entry`).set(auth(owner.token)).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/overtime`).set(auth(cg.token)).send({ units: 2 }).expect(200);
+      const fee = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      const { paymentId } = (await http().post(`${fees}/${fee.id}/pay`).set(auth(owner.token)).send({ method: 'tng' }).expect(200)).body as { paymentId: number };
+      await succeed(paymentId);
+      // The booked service ended 10 min ago.
+      const minutes = fee.visit.minutes;
+      await db().query("UPDATE orders SET visits = jsonb_set(visits::jsonb, '{0,start}', to_jsonb($2::int))::json WHERE id = $1", [order.id, nowMin() - minutes - 10]);
+      await db().query("UPDATE visit_runs SET entered_at = now() - make_interval(mins => $2::int) WHERE order_id = $1 AND idx = 0", [order.id, minutes + 15]);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      const base = `/api/caregiver/tasks/${order.id}/0`;
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]), 'a.jpg').expect(200);
+      const v0 = (await http().get(base).set(auth(cg.token)).expect(200)).body as VisitTask;
+      for (const c of v0.checklist) await http().post(`${base}/check`).set(auth(cg.token)).send({ item: c.item, done: true }).expect(200);
+      const v = (await http().post(`${base}/report`).set(auth(cg.token)).expect(200)).body as VisitTask;
+      expect(v.overtime).toMatchObject({ status: 'paid', units: 2, usedMin: 15, usedSen: 1000 });
+
+      const after = ((await http().get(fees).set(auth(owner.token)).expect(200)).body as ExtraFee[])[0];
+      expect(after.used).toEqual({ minutes: 15, sen: 1000, refundSen: 1000, refund: 'on_its_way' });
+      const o16 = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      expect(o16.lines.find((l) => l.key === `o${fee.id}`)).toMatchObject({ reason: 'Overtime: unused time', amountSen: 1000, state: 'on_its_way' });
+    });
+  });
+
   describe('E8-6 location check', () => {
     const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
     const home = { lat: 3.1319, lng: 101.6841 };

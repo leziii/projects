@@ -5,12 +5,14 @@
       <text class="note">Order {{ fee.number }} · visit {{ fee.index + 1 }}, {{ visitWhen(fee.visit) }} · {{ fee.caregiver }}</text>
       <text class="strong" :class="fee.status === 'requested' ? 'wait' : fee.status === 'paid' || fee.status === 'not_needed' ? 'ok' : 'muted'" data-test="fee-status">{{ extraFeeStatusText(fee) }}</text>
       <text v-if="fee.status === 'requested' && fee.payment?.status === 'failed'" class="error left" data-test="fee-failed">Payment failed. Try again.</text>
+      <text v-if="fee.used" class="line" data-test="fee-used">{{ extraFeeUsedText(fee.used) }}</text>
+      <text v-if="fee.used && fee.used.refundSen" class="link" data-test="see-refunds" @click="openRefunds">See refunds ›</text>
     </view>
 
     <view v-if="fee.kind === 'overtime'" class="card" data-test="overtime-box">
       <text class="line">{{ fee.caregiver }} asks to stay {{ fee.units * OVERTIME_RULES.unitMin }} min longer.</text>
       <text class="note" data-test="fits">✓ Fits {{ fee.caregiver }}'s schedule (checked when asked).</text>
-      <text class="note" data-test="until">If you pay, the visit can run until {{ overtimeUntilText(fee.visit, fee.units) }}.</text>
+      <text class="note" data-test="until">{{ fee.status === 'paid' ? 'Paid: the visit can run until' : 'If you pay, the visit can run until' }} {{ overtimeUntilText(fee.visit, fee.units) }}.</text>
       <text class="note">Unpaid overtime is not done. Unused minutes are refunded.</text>
     </view>
 
@@ -51,6 +53,7 @@ import {
   WAITING_RULE_TEXT,
   extraFeeStatusText,
   extraFeeTitle,
+  extraFeeUsedText,
   formatRM,
   overtimeUntilText,
   visitWhen,
@@ -138,6 +141,8 @@ const letIn = () =>
     await confirmEntry(id, fee.value!.index);
   });
 
+const openRefunds = () => uni.navigateTo({ url: `/pages/orders/refunds?id=${id}` });
+
 const back = () => (getCurrentPages().length > 1 ? uni.navigateBack() : uni.redirectTo({ url: `/pages/orders/detail?id=${id}` }));
 </script>
 
@@ -152,6 +157,7 @@ const back = () => (getCurrentPages().length > 1 ? uni.navigateBack() : uni.redi
 .ok { color: var(--pp-primary-strong); }
 .wait { color: var(--pp-accent); }
 .muted { color: var(--pp-muted); }
+.link { color: var(--pp-primary-strong); font-weight: 600; font-size: 26rpx; }
 .error.left { text-align: left; }
 .option { padding: 16rpx; border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
 .option.on { border: 2px solid var(--pp-primary-strong); }

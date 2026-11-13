@@ -200,6 +200,14 @@ export class RequestsDevController {
     return done;
   }
 
+  /** E11-4: as if minutes had passed for a visit (its start, arrival and entry move earlier). */
+  @Post('visit-shift')
+  @HttpCode(200)
+  visitShift(@Body() body: { number?: unknown; index?: unknown; minutes?: unknown }): Promise<{ number: string; start: number }> {
+    if (this.config.get('NODE_ENV') === 'production' || this.config.get('DEV_TOOLS') === 'off') throw new NotFoundException();
+    return this.requests.visitShift(body?.number, body?.index ?? 0, body?.minutes);
+  }
+
   /** R35-7: a visit starts in 10 minutes, so arrival can be tested now. */
   @Post('visit-soon')
   @HttpCode(200)

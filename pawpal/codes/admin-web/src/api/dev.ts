@@ -68,5 +68,9 @@ export const expireRequest = (number: string, f?: typeof fetch) => api<{ number:
 export const reportDue = (number: string, visit: number, f?: typeof fetch) =>
   api<{ number: string; confirmed: number }>('/dev/report-due', { number: number.trim().toUpperCase(), index: visit - 1 }, f);
 
+/** E11-4: as if minutes had passed for a visit (its start, arrival and entry move earlier), to test waiting and overtime. */
+export const visitShift = (number: string, visit: number, minutes: number, f?: typeof fetch) =>
+  api<{ number: string; start: number }>('/dev/visit-shift', { number: number.trim().toUpperCase(), index: visit - 1, minutes }, f);
+
 export const visitSoon = (number: string, visit: number, f?: typeof fetch) =>
   api<{ number: string; date: string; start: number }>('/dev/visit-soon', { number: number.trim().toUpperCase(), index: visit - 1 }, f);

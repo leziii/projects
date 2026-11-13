@@ -315,6 +315,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         link: { type: 'request', id },
       });
     });
+    await this.fees.settleUnused(id, index);
     return this.detail(user, id);
   }
 

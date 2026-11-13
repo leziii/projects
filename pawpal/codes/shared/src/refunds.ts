@@ -13,7 +13,7 @@ export const REFUND_RETRY_MINUTES = 3;
 export type RefundState = 'on_its_way' | 'refunded' | 'processing';
 
 export interface RefundLine {
-  /** Stable id of this refund within the order: "full-12" (whole charge) or "v0" (visit 1 cancelled). */
+  /** Stable id of this refund within the order: "full-12" (whole charge), "v0" (visit 1 cancelled), "w5" / "o5" (unused extra fee 5). */
   key: string;
   reason: string;
   amountSen: number;
@@ -62,6 +62,9 @@ export function refundStateText(l: Pick<RefundLine, 'state' | 'doneAt'>): string
 
 /** R44-3: why the money comes back. */
 export function refundReason(key: string, endReason: string | null): string {
+  // E11-4 (R48-3): unused waiting prepay (w12) and unused overtime (o12), by extra fee id.
+  if (/^w\d+$/.test(key)) return 'Waiting: unused prepay';
+  if (/^o\d+$/.test(key)) return 'Overtime: unused time';
   const visit = /^v(\d+)$/.exec(key);
   if (visit) return `Visit ${Number(visit[1]) + 1} cancelled`;
   if (endReason === 'withdrawn') return 'Withdrawn';

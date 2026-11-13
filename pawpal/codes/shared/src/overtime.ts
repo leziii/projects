@@ -15,6 +15,9 @@ export interface OvertimeRequest {
   amountSen: number;
   status: OvertimeStatus;
   requestedAt: string;
+  /** E11-4 (R48-4): once the report is sent, the overtime actually used and earned. */
+  usedMin: number | null;
+  usedSen: number | null;
 }
 
 export interface OvertimeCheck {

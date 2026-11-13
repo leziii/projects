@@ -14,6 +14,8 @@ describe('E10-3 track refunds', () => {
   it('names why the money comes back (R44-3)', () => {
     expect(refundReason('v0', 'cancelled')).toBe('Visit 1 cancelled');
     expect(refundReason('v2', null)).toBe('Visit 3 cancelled');
+    expect(refundReason('w5', null)).toBe('Waiting: unused prepay');
+    expect(refundReason('o5', 'withdrawn')).toBe('Overtime: unused time');
     expect(refundReason('full-5', 'withdrawn')).toBe('Withdrawn');
     expect(refundReason('full-5', 'rejected')).toBe('Not accepted');
     expect(refundReason('full-5', 'timeout')).toBe('Not accepted');

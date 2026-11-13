@@ -222,6 +222,7 @@ flowchart LR
 | Request waiting (S10, S14) | S10 "Owner asked me to wait" after arrival, before entry; clock from later of booked start and arrival to entry; 10 min free then RM5 per started 10 min, cap 60 min / RM25; prepay RM25, unused refunded (E11-4); owner approve/pay in E11-3; at 60 min "Waiting limit reached" | Built (E11-1) |
 | Request overtime (S11, S14) | S11 "Ask for overtime" while in service → S14; 15-min units RM10, up to own overtime limit; next visit + buffer and blocks checked, Send off on clash; owner told, approve/pay E11-3; one open request per visit, withdraw before paid | Built (E11-2) |
 | Approve and pay extra fees (O19, O11) | "Extra fee to approve" card on the order and message → O19; overtime: approve and pay (booking pay page) or Decline; waiting: pay RM25 prepay or "Let them in now"; unpaid overtime lapses at booked end; no withdraw after paid; failed payment retried | Built (E11-3) |
+| Refund unused extra fees (O16, O19) | Waiting: unused prepay refunded at let in; overtime: unused 15-min units refunded at finish; O16 line and O19 used/refunded text; caregiver sees what was earned | Built (E11-4) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -325,6 +326,7 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E11-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: minutes show "0 min" when let in before waiting began) | 9 Nov 2026 |
 | E11-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; also gave an old admin list test more time) | 10 Nov 2026 |
 | E11-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: Declined shown grey, payment-failed line aligned; also fixed an old login test that could pick a used phone) | 12 Nov 2026 |
+| E11-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: O19 says "Paid: the visit can run until" after paying; added admin Test tools "Pass time") | 13 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -969,3 +971,12 @@ All business rules are decided. Only these remain:
 | R47-3 | Waiting | Owner pays the RM25 prepay, or taps "Let them in now" (free within 10 min); no Decline |
 | R47-4 | Not paid in time | Overtime request lapses when the booked service time ends; an unpaid wait stays unpaid (no-handover in a later story) |
 | R47-5 | After paying | The caregiver can no longer withdraw; unused minutes refunded in E11-4; a failed payment can be tried again and the request stays open |
+
+### Round 48 · 12 Nov 2026 · KF decision (E11-4 refund unused extra fees)
+| # | Question | Decision |
+|---|---|---|
+| R48-1 | Waiting | When the owner lets the caregiver in, the clock stops and the unused part of the RM25 prepay is refunded at once (waited 25 min → RM10 charged, RM15 back); at 60 min all RM25 is used |
+| R48-2 | Overtime | At "Finish, write report" the overtime used is counted in started 15-min units and the rest refunded (paid 30 min, used 10 min → RM10 charged, RM10 back) |
+| R48-3 | Owner | O16 Refunds gets a line ("Waiting: unused RM15" / "Overtime: unused 15 min") with the usual On its way / Refunded; O19 shows "Used 25 min · RM10 · RM15 refunded" |
+| R48-4 | Caregiver | S14 and S11 show what was actually earned ("Waited 25 min · RM10") |
+| R48-5 | Not here | A wait the owner never paid stays unpaid (no-handover story later) |

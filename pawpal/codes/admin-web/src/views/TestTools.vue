@@ -167,6 +167,25 @@
     </el-card>
 
     <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
+      <template #header>Pass time for a visit (E11-4)</template>
+      <el-form label-width="110px" data-test="shift-tool" @submit.prevent>
+        <el-form-item label="Order number">
+          <el-input v-model="shiftNumber" placeholder="A visit that has started or been arrived at" data-test="shift-number" />
+        </el-form-item>
+        <el-form-item label="Visit">
+          <el-input-number v-model="shiftVisit" :min="1" :max="60" data-test="shift-visit" />
+        </el-form-item>
+        <el-form-item label="Minutes">
+          <el-input-number v-model="shiftMinutes" :min="1" :max="240" data-test="shift-minutes" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" data-test="shift-run" @click="passTime">Pass time</el-button>
+        </el-form-item>
+        <p class="hint">As if these minutes had passed: the booked start, arrival and entry all move earlier. Use it to test waiting and overtime without waiting.</p>
+      </el-form>
+    </el-card>
+
+    <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
       <template #header>Make a report 12 h old (E9-2)</template>
       <el-form label-width="110px" data-test="due-tool" @submit.prevent>
         <el-form-item label="Order number">
@@ -195,6 +214,7 @@ import {
   STATUS_OPTIONS,
   addTestVisit,
   expireRequest,
+  visitShift,
   visitSoon,
   reportDue,
   markOrderSettled,
@@ -301,6 +321,19 @@ async function moveSoon() {
   try {
     const r = await visitSoon(soonNumber.value, soonVisit.value);
     ElMessage.success(`Visit ${soonVisit.value} of ${r.number} now starts at ${timeText(r.start)} today`);
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
+
+const shiftNumber = ref('');
+const shiftVisit = ref(1);
+const shiftMinutes = ref(35);
+
+async function passTime() {
+  try {
+    const r = await visitShift(shiftNumber.value, shiftVisit.value, shiftMinutes.value);
+    ElMessage.success(`${shiftMinutes.value} min passed for visit ${shiftVisit.value} of ${r.number}; it now started at ${timeText(r.start)}`);
   } catch (err) {
     ElMessage.error((err as Error).message);
   }

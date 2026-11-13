@@ -29,7 +29,7 @@ export * from './cases';
 export * from './reviews';
 
 export const APP_NAME = 'PawPal';
-export const SHARED_VERSION = '0.51.0';
+export const SHARED_VERSION = '0.52.0';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';

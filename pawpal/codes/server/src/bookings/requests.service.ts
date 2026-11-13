@@ -263,6 +263,7 @@ export class RequestsService {
       );
       if (!rows[0]) throw new ConflictException({ code: 'REPORT_LOCKED', message: 'The report is sent and locked. Contact support to change it' });
       await this.saveLocation(client, user, orderId, index, 'report', location);
+      await this.fees.afterReport(client, orderId, index, rows[0].reported);
       await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: 'report_sent', actor: { type: 'caregiver', id: String(user.id) }, reason: `Report sent for visit ${index + 1} (${v.photos.length} photos)` });
       const o = await client.query<{ owner_id: number; display_name: string }>(
         'SELECT o.owner_id, c.display_name FROM orders o JOIN caregiver_profiles c ON c.user_id = o.caregiver_id WHERE o.id = $1',
@@ -278,6 +279,7 @@ export class RequestsService {
         link: { type: 'report', id: Number(rows[0].id) },
       });
     });
+    await this.fees.settleUnused(orderId, index);
     return this.visit(user, orderId, index);
   }
 
@@ -363,8 +365,9 @@ export class RequestsService {
       );
       if (!rowCount) throw new ConflictException({ code: 'NOT_ARRIVED', message: v.status === 'todo' ? 'Tap "I\'ve arrived" first' : 'Entry is already confirmed' });
       await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'arrived', to: 'in_service', actor: { type: 'caregiver', id: String(user.id) }, reason: `Entry confirmed for visit ${index + 1}` });
-      await this.fees.afterEntry(client, orderId, index);
+      await this.fees.afterEntry(client, orderId, index, now);
     });
+    await this.fees.settleUnused(orderId, index);
     return this.visit(user, orderId, index, now);
   }
 
@@ -408,12 +411,12 @@ export class RequestsService {
   /** E11-2 (R46-5): the open overtime request of a visit, or the paid one (E11-3). */
   async openOvertime(orderId: number, index: number): Promise<OvertimeRequest | null> {
     await this.fees.lapseDue(orderId);
-    const { rows } = await this.db.pool.query<{ id: string; units: number; amount_sen: number; status: OvertimeRequest['status']; at: string }>(
-      `SELECT id, units, amount_sen, status, ${ts('requested_at')} AS at FROM extra_fees WHERE order_id = $1 AND idx = $2 AND kind = 'overtime' AND status IN ('requested', 'paid') ORDER BY id DESC LIMIT 1`,
+    const { rows } = await this.db.pool.query<{ id: string; units: number; amount_sen: number; status: OvertimeRequest['status']; at: string; used_min: number | null; used_sen: number | null }>(
+      `SELECT id, units, amount_sen, status, ${ts('requested_at')} AS at, used_min, used_sen FROM extra_fees WHERE order_id = $1 AND idx = $2 AND kind = 'overtime' AND status IN ('requested', 'paid') ORDER BY id DESC LIMIT 1`,
       [orderId, index],
     );
     const r = rows[0];
-    return r ? { id: Number(r.id), units: r.units, amountSen: r.amount_sen, status: r.status, requestedAt: r.at } : null;
+    return r ? { id: Number(r.id), units: r.units, amountSen: r.amount_sen, status: r.status, requestedAt: r.at, usedMin: r.used_min, usedSen: r.used_sen } : null;
   }
 
   /** Dev tool (R35-7): a visit of an order starts in 10 minutes. */
@@ -431,6 +434,25 @@ export class RequestsService {
     if (!rowCount) throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'No order with this number and visit' });
     await this.db.pool.query('UPDATE booked_visits SET visit_date = $2, start_min = $3 WHERE order_id = (SELECT id FROM orders WHERE number = $1) AND id = (SELECT id FROM booked_visits WHERE order_id = (SELECT id FROM orders WHERE number = $1) ORDER BY id OFFSET $4 LIMIT 1)', [number, date, start, i]);
     return { number, date, start };
+  }
+
+  /** Dev tool (E11-4): as if `minutes` had passed for this visit: its start, arrival and entry all move that much earlier. */
+  async visitShift(input: unknown, index: unknown, minutesIn: unknown): Promise<{ number: string; start: number }> {
+    const number = typeof input === 'string' ? input.trim().toUpperCase() : '';
+    const i = Number.isInteger(index) ? (index as number) : 0;
+    const minutes = Number.isInteger(minutesIn) ? (minutesIn as number) : 0;
+    const { rows } = await this.db.pool.query<{ id: number; start: number }>(
+      `UPDATE orders SET visits = jsonb_set(visits, ARRAY[$2::text, 'start'], to_jsonb((visits->$3->>'start')::int - $4))
+       WHERE number = $1 AND jsonb_array_length(visits) > $3 RETURNING id, (visits->$3->>'start')::int AS start`,
+      [number, String(i), i, minutes],
+    );
+    if (!rows[0]) throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'No order with this number and visit' });
+    await this.db.pool.query(
+      `UPDATE visit_runs SET arrived_at = arrived_at - make_interval(mins => $3), entered_at = entered_at - make_interval(mins => $3),
+         waiting_requested_at = waiting_requested_at - make_interval(mins => $3) WHERE order_id = $1 AND idx = $2`,
+      [rows[0].id, i, minutes],
+    );
+    return { number, start: rows[0].start };
   }
 
   /** Dev tool: the deadline of an open request passes now. */
