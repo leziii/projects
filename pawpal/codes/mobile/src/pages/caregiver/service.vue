@@ -49,9 +49,8 @@
     </view>
     <view class="later-row">
       <button class="ghost" data-test="overtime" @click="openOvertime">{{ v.overtime ? 'Overtime request' : 'Ask for overtime' }}</button>
-      <button class="ghost" data-test="problem" disabled>Report a problem</button>
+      <button class="ghost" data-test="problem" @click="openProblem">Report a problem</button>
     </view>
-    <text class="note center" data-test="later-note">Report a problem: coming later</text>
 
     <text v-if="photoState !== 'none'" class="note center" data-test="finish-wait">{{ photoState === 'failed' ? 'A photo failed to upload. Tap ↻ to try again, or remove it' : 'Waiting for photos to upload' }}</text>
     <button class="primary" data-test="finish" :disabled="busy || photoState !== 'none'" @click="finish">Finish, write report</button>
@@ -100,6 +99,7 @@ const served = computed(() => (v.value?.enteredAt ? servedMinutes(v.value.entere
 const clockOf = (at: string) => timeText(Number(at.slice(11, 13)) * 60 + Number(at.slice(14, 16)));
 
 /** E11-2 (R46-1): S14 Overtime. */
+const openProblem = () => uni.navigateTo({ url: `/pages/caregiver/problem?id=${id.value}&i=${index.value}` });
 const openOvertime = () => uni.navigateTo({ url: `/pages/caregiver/overtime?id=${id.value}&i=${index.value}` });
 
 function show(next: VisitTask) {

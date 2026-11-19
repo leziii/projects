@@ -65,6 +65,9 @@ export function refundReason(key: string, endReason: string | null): string {
   // E11-4 (R48-3): unused waiting prepay (w12) and unused overtime (o12), by extra fee id.
   if (/^w\d+$/.test(key)) return 'Waiting: unused prepay';
   if (/^o\d+$/.test(key)) return 'Overtime: unused time';
+  // E12-3 (R51-4): the admin's decision on a problem, by visit index (x0 = visit 1).
+  const decided = /^x(\d+)$/.exec(key);
+  if (decided) return `Visit ${Number(decided[1]) + 1}: problem decision`;
   const visit = /^v(\d+)$/.exec(key);
   if (visit) return `Visit ${Number(visit[1]) + 1} cancelled`;
   if (endReason === 'withdrawn') return 'Withdrawn';

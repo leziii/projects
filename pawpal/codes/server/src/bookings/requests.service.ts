@@ -151,7 +151,7 @@ export class RequestsService {
     const all: Task[] = rows.flatMap((o) => o.visits.map((v, index) => taskOf(o, v, index, runs.get(runKey(Number(o.id), index)) ?? NOT_STARTED)));
     const buffer = await this.db.pool.query<{ travel_buffer_min: number }>('SELECT travel_buffer_min FROM caregiver_profiles WHERE user_id = $1', [user.id]);
     return {
-      days: dates.map((d) => ({ date: d, count: all.filter((t) => t.date === d && t.status !== 'cancelled').length })),
+      days: dates.map((d) => ({ date: d, count: all.filter((t) => t.date === d && t.status !== 'cancelled' && t.status !== 'closed' && t.status !== 'moved').length })),
       date: day,
       tasks: all.filter((t) => t.date === day).sort((a, b) => a.start - b.start),
       bufferMin: buffer.rows[0]?.travel_buffer_min ?? 30,
@@ -257,14 +257,17 @@ export class RequestsService {
     const problems = reportProblems(v);
     if (problems.length) throw new ConflictException({ code: 'REPORT_INCOMPLETE', message: problems[0], problems });
     await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ id: string; reported: string }>(
-        `UPDATE visit_runs SET status = 'report_sent', reported_at = now(), updated_at = now() WHERE order_id = $1 AND idx = $2 AND status = 'in_service' RETURNING id, ${ts('reported_at')} AS reported`,
+      // E12-2 (R50-1): when the owner already raised a problem on this visit, the report goes straight to review.
+      const { rows } = await client.query<{ id: string; reported: string; status: 'report_sent' | 'disputed' }>(
+        `UPDATE visit_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM cases c WHERE c.order_id = $1 AND c.idx = $2) THEN 'disputed' ELSE 'report_sent' END,
+           reported_at = now(), updated_at = now()
+         WHERE order_id = $1 AND idx = $2 AND status = 'in_service' RETURNING id, status, ${ts('reported_at')} AS reported`,
         [orderId, index],
       );
       if (!rows[0]) throw new ConflictException({ code: 'REPORT_LOCKED', message: 'The report is sent and locked. Contact support to change it' });
       await this.saveLocation(client, user, orderId, index, 'report', location);
       await this.fees.afterReport(client, orderId, index, rows[0].reported);
-      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: 'report_sent', actor: { type: 'caregiver', id: String(user.id) }, reason: `Report sent for visit ${index + 1} (${v.photos.length} photos)` });
+      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: rows[0].status, actor: { type: 'caregiver', id: String(user.id) }, reason: `Report sent for visit ${index + 1} (${v.photos.length} photos)` });
       const o = await client.query<{ owner_id: number; display_name: string }>(
         'SELECT o.owner_id, c.display_name FROM orders o JOIN caregiver_profiles c ON c.user_id = o.caregiver_id WHERE o.id = $1',
         [orderId],
@@ -274,7 +277,7 @@ export class RequestsService {
         role: 'owner',
         category: 'order',
         title: `Report for visit ${index + 1} is ready`,
-        body: `Order ${v.number}: ${shortName(o.rows[0].display_name)} sent the report for ${v.date} ${taskTime(v)}. Please check it by ${confirmByText(rows[0].reported)}.`,
+        body: `Order ${v.number}: ${shortName(o.rows[0].display_name)} sent the report for ${v.date} ${taskTime(v)}. ${rows[0].status === 'disputed' ? 'It is part of the problem you raised, which our team is reviewing.' : `Please check it by ${confirmByText(rows[0].reported)}.`}`,
         // R39-1: straight to the report.
         link: { type: 'report', id: Number(rows[0].id) },
       });
@@ -327,7 +330,7 @@ export class RequestsService {
   async arrive(user: User, orderId: number, index: number, location: unknown = null, now = new Date()): Promise<VisitTask> {
     const v = await this.visit(user, orderId, index, now);
     if (!canArrive(v, now)) {
-      throw new ConflictException({ code: 'CANNOT_ARRIVE', message: v.status === 'todo' ? `You can tap this ${arriveFromText(v).toLowerCase()}` : v.status === 'cancelled' ? 'This visit was cancelled' : 'Arrival is already recorded' });
+      throw new ConflictException({ code: 'CANNOT_ARRIVE', message: v.status === 'todo' ? `You can tap this ${arriveFromText(v).toLowerCase()}` : v.status === 'cancelled' ? 'This visit was cancelled' : v.status === 'closed' ? 'This visit was closed by our team' : v.status === 'moved' ? 'This visit moved to another caregiver' : 'Arrival is already recorded' });
     }
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query("INSERT INTO visit_runs (order_id, idx, status, arrived_at) VALUES ($1, $2, 'arrived', now()) ON CONFLICT DO NOTHING", [orderId, index]);

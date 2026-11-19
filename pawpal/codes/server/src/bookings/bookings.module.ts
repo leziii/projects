@@ -8,6 +8,8 @@ import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { AdminCasesController, CasesController, CasesDevController } from './cases.controller';
 import { CasesService } from './cases.service';
+import { AdminProblemsController, ProblemsController } from './problems.controller';
+import { ProblemsService } from './problems.service';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { LocationFlagsController, RequestsController, RequestsDevController } from './requests.controller';
@@ -23,5 +25,9 @@ import { AdminRefundsController, RefundsController, RefundsDevController } from 
 import { RefundsService } from './refunds.service';
 import { VisitRunsService } from './visit-runs.service';
 
-@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController, LocationFlagsController, CasesController, AdminCasesController, CasesDevController, ReviewsController, AdminReviewsController, CancelController, RefundsController, AdminRefundsController, RefundsDevController, ExtraFeesController], providers: [ExtraFeesService, OvertimeService, RefundsService, ReviewsService, CancelService, BookingsService, OrdersService, RequestsService, VisitRunsService, CasesService] })
+import { AdminExceptionsController } from './exceptions.controller';
+import { ExceptionsService } from './exceptions.service';
+import { AdminSubstitutesController, SubstitutesController, SubstitutesDevController } from './substitutes.controller';
+import { SubstitutesService } from './substitutes.service';
+@Module({ imports: [AddressesModule, CaregiversModule, PaymentsModule, PromosModule, ReferralsModule], controllers: [BookingsController, OrdersController, RequestsController, RequestsDevController, LocationFlagsController, CasesController, AdminCasesController, CasesDevController, ReviewsController, AdminReviewsController, CancelController, RefundsController, AdminRefundsController, RefundsDevController, ExtraFeesController, ProblemsController, AdminProblemsController, AdminExceptionsController, AdminSubstitutesController, SubstitutesController, SubstitutesDevController], providers: [ExtraFeesService, OvertimeService, RefundsService, ReviewsService, CancelService, BookingsService, OrdersService, RequestsService, VisitRunsService, CasesService, ProblemsService, ExceptionsService, SubstitutesService] })
 export class BookingsModule {}

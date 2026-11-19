@@ -131,6 +131,12 @@
 			}
 		},
 		{
+			"path": "pages/caregiver/problem",
+			"style": {
+				"navigationBarTitleText": "Report a problem"
+			}
+		},
+		{
 			"path": "pages/orders/extra",
 			"style": {
 				"navigationBarTitleText": "Extra fee"
@@ -147,6 +153,12 @@
 			"path": "pages/orders/review",
 			"style": {
 				"navigationBarTitleText": "Rate your caregiver"
+			}
+		},
+		{
+			"path": "pages/orders/substitute",
+			"style": {
+				"navigationBarTitleText": "Substitute caregiver"
 			}
 		},
 		{

@@ -3,33 +3,52 @@
     <view v-if="sent" class="card" data-test="case">
       <view class="row">
         <text class="section">{{ CASE_KIND_LABEL[sent.kind] }}</text>
-        <text class="tag" data-test="case-status">{{ CASE_STATUS_LABEL[sent.status] }}</text>
+        <text class="tag" :class="{ done: sent.status === 'decided' }" data-test="case-status">{{ CASE_STATUS_LABEL[sent.status] }}</text>
       </view>
       <text class="note">Order {{ sent.number }} · visit {{ sent.index + 1 }}</text>
       <text class="body" data-test="case-description">{{ sent.description }}</text>
-      <view v-if="sent.photos.length" class="photos">
+      <view v-if="sent.photos.length || canAddPhoto" class="photos">
         <view v-for="pid in sent.photos" :key="pid" class="photo" data-test="case-photo">
           <image v-if="urls[pid]" :src="urls[pid]" mode="aspectFill" class="img" />
         </view>
+        <view v-if="canAddPhoto" class="photo add" data-test="case-photo-add" @click="addPhoto"><text>{{ uploading ? '…' : '＋' }}</text></view>
       </view>
-      <view class="steps">
-        <text class="step done" data-test="step-sent">✓ Sent {{ klAtText(sent.createdAt) }}</text>
-        <text class="step" :class="{ done: sent.reviewingAt }" data-test="step-review">{{ sent.reviewingAt ? `✓ Under review since ${klAtText(sent.reviewingAt)}` : '○ Under review' }}</text>
-        <text class="step" data-test="step-decision">○ Decision: we will message you</text>
-      </view>
-      <text class="note">Payout to the caregiver is on hold while we look into this. Your other visits go ahead as booked.</text>
     </view>
 
-    <template v-else-if="ready">
+    <view v-if="sent" class="card">
+      <text class="section">Progress</text>
+      <view class="steps">
+        <text v-for="s in timeline" :key="s.key" class="step" :class="{ done: s.at }" :data-test="STEP_TEST[s.key]">{{ stepText(s) }}</text>
+      </view>
+      <view v-if="sent.decision" class="decided"><text class="note">Decision</text><text class="strong" data-test="case-decision">{{ sent.decision }}</text></view>
+      <view v-else class="row decision"><text class="note">Decision</text><text class="strong" data-test="case-decision">—</text></view>
+      <text v-if="sent.caregiverReport" class="cg" data-test="caregiver-report">Caregiver reported: {{ sent.caregiverReport.kind }} · {{ klAtText(sent.caregiverReport.at) }}</text>
+      <text v-if="open" class="note">Payout to the caregiver is on hold while we look into this. Your other visits go ahead as booked.</text>
+    </view>
+
+    <view v-if="sent && (sent.notes.length || open)" class="card">
+      <text class="section">Your notes</text>
+      <view v-for="n in sent.notes" :key="n.id" class="noteline" data-test="case-note">
+        <text class="body">{{ n.body }}</text>
+        <text class="note">{{ klAtText(n.at) }}</text>
+      </view>
+      <template v-if="open">
+        <textarea v-model="noteText" class="textarea short" data-test="note-input" :maxlength="CASE_RULES.noteMax" placeholder="Add something for our team, e.g. a time or a detail" />
+        <button class="ghost" data-test="add-note" :disabled="!noteText.trim() || busy" @click="addNote">Add note</button>
+      </template>
+    </view>
+    <text v-if="sent && error" class="error" data-test="error">{{ error }}</text>
+
+    <template v-else-if="!sent && kinds.length">
       <view class="card">
         <text class="section">What went wrong?</text>
         <view class="kinds">
-          <text v-for="k in CASE_KINDS" :key="k" class="kind" :class="{ on: kind === k }" :data-test="`kind-${k}`" @click="kind = k">{{ CASE_KIND_LABEL[k] }}</text>
+          <text v-for="k in kinds" :key="k" class="kind" :class="{ on: kind === k }" :data-test="`kind-${k}`" @click="kind = k">{{ CASE_KIND_LABEL[k] }}</text>
         </view>
       </view>
       <view class="card">
         <text class="section">Tell us more</text>
-        <textarea v-model="description" class="textarea" data-test="description" :maxlength="CASE_RULES.descriptionMax" placeholder="What happened? e.g. the litter box was not cleaned" />
+        <textarea v-model="description" class="textarea" data-test="description" :maxlength="CASE_RULES.descriptionMax" :placeholder="onReport ? 'What happened? e.g. the litter box was not cleaned' : 'What happened? e.g. nobody came at 10 am'" />
         <text class="note right" data-test="description-count">{{ description.length }} / {{ CASE_RULES.descriptionMax }}</text>
       </view>
       <view class="card">
@@ -42,7 +61,7 @@
           <view v-if="photos.length < CASE_RULES.maxPhotos" class="photo add" data-test="add-photo" @click="pick"><text>＋</text></view>
         </view>
       </view>
-      <text class="note">Sending stops the 12 h auto-confirm. Our team reviews it, and payout for this order is on hold meanwhile.</text>
+      <text class="note" data-test="send-note">{{ onReport ? 'Sending stops the 12 h auto-confirm. Our team reviews it, and payout for this order is on hold meanwhile.' : 'Our team reviews it and may contact you and the caregiver. Payout for this order is on hold meanwhile.' }}</text>
       <text v-if="error" class="error" data-test="error">{{ error }}</text>
       <text v-else-if="problem" class="hint" data-test="hint">{{ problem }}</text>
       <button class="primary" data-test="send-case" :disabled="!!problem || busy" @click="send">{{ busy ? 'Sending…' : 'Send' }}</button>
@@ -54,24 +73,36 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
-import { CASE_KINDS, CASE_KIND_LABEL, CASE_RULES, CASE_STATUS_LABEL, caseProblem, klAtText, type CaseKind, type VisitCase } from '@pawpal/shared';
+import { CASE_KIND_LABEL, CASE_RULES, CASE_STATUS_LABEL, NOT_STARTED, caseKindsFor, caseOpen, caseProblem, caseTimeline, klAtText, type CaseKind, type CaseStatus, type VisitCase } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
-import { casePhotoUrl, getCase, getReport, raiseProblem } from '@/api/booking';
-import { ApiError } from '@/api/client';
+import { addCaseNote, addCasePhoto, casePhotoUrl, getCase, getOrderDetail, raiseProblem } from '@/api/booking';
 import { shrinkPhoto } from '@/photo-shrink';
 
-/** O18 (E9-2, R40-3 … R40-6): raise a problem on a visit's report, then follow the case. */
+/** O18 (E9-2 R40-3 … R40-6, E12-2 R50-1 … R50-4): raise a problem on a visit, then follow the case. */
+const STEP_TEST: Record<CaseStatus, string> = { sent: 'step-sent', reviewing: 'step-review', decided: 'step-decision' };
 const sent = ref<VisitCase | null>(null);
-const ready = ref(false);
+const kinds = ref<CaseKind[]>([]);
+const onReport = ref(false);
 const error = ref('');
 const busy = ref(false);
+const uploading = ref(false);
 const kind = ref<CaseKind | ''>('');
 const description = ref('');
+const noteText = ref('');
 const photos = ref<{ file: Blob; preview: string }[]>([]);
 const urls = reactive<Record<number, string>>({});
 const problem = computed(() => caseProblem({ kind: kind.value, description: description.value }));
+const open = computed(() => !!sent.value && caseOpen(sent.value));
+const canAddPhoto = computed(() => open.value && sent.value!.photos.length < CASE_RULES.maxPhotos);
+const timeline = computed(() => (sent.value ? caseTimeline(sent.value) : []));
 let id = 0;
 let index = 0;
+
+/** "✓ Sent 10:30 am, Thu 5 Nov" · "✓ Under review since …" · "○ Decided" */
+function stepText(s: { key: CaseStatus; label: string; at: string | null }): string {
+  if (!s.at) return `○ ${s.label}`;
+  return `✓ ${s.label}${s.key === 'reviewing' ? ' since' : ''} ${klAtText(s.at)}`;
+}
 
 function show(c: VisitCase) {
   sent.value = c;
@@ -83,20 +114,15 @@ function show(c: VisitCase) {
 async function load() {
   error.value = '';
   try {
-    show(await getCase(id, index));
+    const order = await getOrderDetail(id);
+    if (order.caseVisits.includes(index)) return show(await getCase(id, index));
+    // R50-1: from acceptance; Report problem only while the report waits.
+    const run = order.runs[index] ?? NOT_STARTED;
+    kinds.value = caseKindsFor(order.status, run.status);
+    onReport.value = run.status === 'report_sent';
+    if (!kinds.value.length) error.value = run.status === 'confirmed' ? 'This visit is already confirmed. For help, use WhatsApp support.' : 'A problem cannot be raised on this visit. For help, use WhatsApp support.';
   } catch (e) {
-    if (!(e instanceof ApiError) || e.code !== 'CASE_NOT_FOUND') {
-      error.value = (e as Error).message;
-      return;
-    }
-    // R40-5: only while the report waits for the owner.
-    try {
-      const r = await getReport(id, index);
-      if (r.status === 'report_sent') ready.value = true;
-      else error.value = 'This visit is already confirmed. For help, use WhatsApp support.';
-    } catch (e2) {
-      error.value = (e2 as Error).message;
-    }
+    error.value = (e as Error).message;
   }
 }
 
@@ -126,13 +152,46 @@ async function send() {
   }
 }
 
+/** R50-4 */
+function addPhoto() {
+  if (uploading.value) return;
+  uni.chooseImage({
+    count: 1,
+    sourceType: ['camera', 'album'],
+    success: async (res) => {
+      uploading.value = true;
+      error.value = '';
+      try {
+        show(await addCasePhoto(id, index, await shrinkPhoto((res.tempFiles as File[])[0])));
+      } catch (e) {
+        error.value = (e as Error).message;
+      } finally {
+        uploading.value = false;
+      }
+    },
+  });
+}
+
+async function addNote() {
+  busy.value = true;
+  error.value = '';
+  try {
+    show(await addCaseNote(id, index, noteText.value));
+    noteText.value = '';
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+
 onLoad((q) => {
   id = Number(q?.id) || 0;
   index = Number(q?.i) || 0;
 });
 onShow(async () => {
   if (!(await requireUser(`/pages/orders/problem?id=${id}&i=${index}`))) return;
-  if (!sent.value) await load();
+  await load();
 });
 </script>
 
@@ -140,6 +199,7 @@ onShow(async () => {
 .content { display: flex; flex-direction: column; padding: 32rpx; gap: 20rpx; }
 .card { display: flex; flex-direction: column; gap: 12rpx; padding: 28rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
 .row { display: flex; justify-content: space-between; align-items: center; }
+.decided { display: flex; flex-direction: column; gap: 6rpx; margin-top: 8rpx; line-height: 1.5; }
 .section { font-weight: 700; font-size: 30rpx; }
 .body { font-size: 28rpx; line-height: 1.5; white-space: pre-wrap; }
 .note { font-size: 26rpx; color: var(--pp-muted); }
@@ -159,6 +219,13 @@ onShow(async () => {
 .steps { display: flex; flex-direction: column; gap: 8rpx; margin-top: 8rpx; }
 .step { font-size: 26rpx; color: var(--pp-muted); }
 .step.done { color: var(--pp-primary-strong); font-weight: 600; }
+.strong { font-weight: 600; }
+.decision { margin-top: 8rpx; }
+.cg { font-size: 26rpx; color: var(--pp-ink); padding: 12rpx 16rpx; background: var(--pp-background); border-radius: 12rpx; }
+.noteline { display: flex; flex-direction: column; gap: 4rpx; padding-bottom: 12rpx; border-bottom: 1px solid var(--pp-border); }
+.textarea.short { height: 140rpx; }
+.tag.done { color: var(--pp-primary-strong); }
+.ghost { width: 100%; background: var(--pp-surface); color: var(--pp-primary-strong); border: 1px solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
 </style>

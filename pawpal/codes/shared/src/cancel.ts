@@ -57,6 +57,8 @@ const BLOCKED: Partial<Record<VisitRun['status'], string>> = {
   confirmed: 'Already done',
   disputed: 'Already done',
   cancelled: 'Cancelled',
+  closed: 'Closed',
+  moved: 'Moved to substitute',
 };
 
 /** R42-1, R42-3: every visit with what cancelling it now would refund. */

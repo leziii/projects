@@ -1,4 +1,4 @@
-import type { AppliedPromo, CancelPreview, CancelResult, BookingDraft, CaregiverOption, DraftInput, EntryInfo, MockOutcome, OrderDetail, OrderFilter, OrderPage, OrderView, PayProblem, PaymentMethod, VisitCase, VisitReport, OrderReview, OrderRefunds, ExtraFee } from '@pawpal/shared';
+import type { AppliedPromo, CancelPreview, CancelResult, BookingDraft, CaregiverOption, DraftInput, EntryInfo, MockOutcome, OrderDetail, OrderFilter, OrderPage, OrderView, PayProblem, PaymentMethod, VisitCase, VisitReport, OrderReview, OrderRefunds, ExtraFee, SubstituteOffer } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export const getDraft = () => api<BookingDraft>('/bookings/draft');
@@ -55,6 +55,24 @@ export async function raiseProblem(id: number, i: number, input: { kind: string;
   return body as VisitCase;
 }
 
+/** O18 (R50-4): one more note while the case is open. */
+export const addCaseNote = (id: number, i: number, body: string) => api<VisitCase>(`/orders/${id}/visits/${i}/case/notes`, { body });
+
+/** O18 (R50-4): one more photo while the case is open. */
+export async function addCasePhoto(id: number, i: number, file: Blob): Promise<VisitCase> {
+  const form = new FormData();
+  form.append('photo', file, 'photo.jpg');
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}/api/orders/${id}/visits/${i}/case/photos`, { method: 'POST', body: form, headers: { authorization: `Bearer ${getToken()}` } });
+  } catch {
+    throw new ApiError('OFFLINE', 'Upload failed. Check your connection and try again', 0);
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+  if (!res.ok) throw new ApiError(body.code ?? `HTTP_${res.status}`, res.status === 413 ? 'Photo is too big (max 10 MB)' : (body.message ?? 'Upload failed'), res.status, body);
+  return body as VisitCase;
+}
+
 export async function casePhotoUrl(id: number, i: number, photoId: number): Promise<string> {
   const res = await fetch(`${apiBase()}/api/orders/${id}/visits/${i}/case/photos/${photoId}`, { headers: { authorization: `Bearer ${getToken()}` } });
   if (!res.ok) throw new ApiError('NO_PHOTO', 'Could not load the photo', res.status);
@@ -84,3 +102,8 @@ export const rebookOrder = (id: number, replace: boolean) => api<BookingDraft>(`
 export const withdrawOrder = (id: number) => api<OrderView>(`/orders/${id}/withdraw`, {});
 /** The test payment page plays the gateway (R21-5): success, fail or still checking. */
 export const testOutcome = (paymentId: number, outcome: MockOutcome) => api<unknown>(`/mock-gateway/payments/${paymentId}/outcome`, { outcome });
+
+/** E12-4 O20 (R52-3 … R52-5): the substitute our team offers; approve or decline. */
+export const getSubstitute = (id: number) => api<{ offer: SubstituteOffer | null }>(`/orders/${id}/substitute`);
+export const approveSubstitute = (id: number) => api<SubstituteOffer>(`/orders/${id}/substitute/approve`, {});
+export const declineSubstitute = (id: number) => api<SubstituteOffer>(`/orders/${id}/substitute/decline`, {});

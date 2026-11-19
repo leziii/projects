@@ -1,6 +1,6 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, Res, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, Res, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { CASE_RULES, SERVICE_RULES, type AdminCaseRow, type AdminUser, type User, type VisitCase, type VisitReport } from '@pawpal/shared';
 import { AdminGuard, CurrentAdmin, ForPage } from '../admin/admin.guard';
@@ -39,6 +39,21 @@ export class CasesController {
   @Get('case')
   caseOf(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number, @Param('i', ParseIntPipe) i: number): Promise<VisitCase> {
     return this.cases.caseOf(user, id, i);
+  }
+
+  /** R50-4: one more photo (multipart "photo") while the case is open. */
+  @Post('case/photos')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: SERVICE_RULES.photoMaxBytes } }))
+  addPhoto(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number, @Param('i', ParseIntPipe) i: number, @UploadedFile() file?: Express.Multer.File): Promise<VisitCase> {
+    return this.cases.addPhoto(user, id, i, file?.buffer);
+  }
+
+  /** R50-4: one more note while the case is open. */
+  @Post('case/notes')
+  @HttpCode(200)
+  addNote(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number, @Param('i', ParseIntPipe) i: number, @Body() body: { body?: unknown }): Promise<VisitCase> {
+    return this.cases.addNote(user, id, i, body?.body);
   }
 
   @Get('case/photos/:photoId')

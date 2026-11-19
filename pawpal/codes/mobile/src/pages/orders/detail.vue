@@ -10,6 +10,13 @@
       </view>
       <text class="line" data-test="order-caregiver">Caregiver: {{ order.caregiver.displayName }}</text>
       <text class="note" data-test="order-status">{{ result.body }}</text>
+      <text v-if="order.substituteOf" class="note" data-test="substitute-of">Substitute for order {{ order.substituteOf.number }} · paid on that order</text>
+    </view>
+
+    <view v-if="order.substitute" class="card" data-test="substitute-card" @click="openSubstitute">
+      <text class="section">A substitute caregiver for you to approve</text>
+      <text class="line" data-test="substitute-summary">{{ order.substitute.caregiver.displayName }} can take {{ order.substitute.visits.length === 1 ? 'visit' : 'visits' }} {{ order.substitute.visits.map((v) => v.index + 1).join(', ') }}. Answer by {{ klAtText(order.substitute.answerBy) }}.</text>
+      <text class="link" data-test="open-substitute">Review ›</text>
     </view>
 
     <view v-if="order.extraFees.length" class="card extra" data-test="extra-fees">
@@ -85,7 +92,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app';
-import { extraFeeTitle, ENTRY_METHOD_LABEL, REQUEST_RULES, canCancelVisit, canRebook, cancelledText, formatRM, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
+import { extraFeeTitle, ENTRY_METHOD_LABEL, REQUEST_RULES, canCancelVisit, canRebook, cancelledText, formatRM, klAtText, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { confirmEntry, getOrderDetail } from '@/api/booking';
 import HelpButton from '@/components/HelpButton.vue';
@@ -166,6 +173,8 @@ const openReport = (i: number) => uni.navigateTo({ url: `/pages/orders/report?id
 const anyCancellable = computed(() => !!order.value && order.value.visits.some((v, i) => canCancelVisit(order.value!.status, order.value!.runs[i], v, now.value)));
 const openFee = (feeId: number) => uni.navigateTo({ url: `/pages/orders/extra?id=${id}&fee=${feeId}` });
 const openRefunds = () => uni.navigateTo({ url: `/pages/orders/refunds?id=${id}` });
+/** E12-4 O20 (R52-3) */
+const openSubstitute = () => uni.navigateTo({ url: `/pages/orders/substitute?id=${id}` });
 const openCancel = () => uni.navigateTo({ url: `/pages/orders/cancel?id=${id}` });
 
 /** R41-1 O21 */

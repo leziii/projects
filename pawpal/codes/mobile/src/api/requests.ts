@@ -1,4 +1,4 @@
-import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review, OvertimeInfo } from '@pawpal/shared';
+import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review, OvertimeInfo, ContactMethod, ProblemKind, ProblemReport } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export interface CaregiverHome {
@@ -58,3 +58,29 @@ export const sendReport = (orderId: number, i: number, location: GeoPoint | null
 /** E9-3 S07 (R41-5) */
 export const getRequestReview = (id: number) => api<{ review: Review | null }>(`/requests/${id}/review`);
 export const replyReview = (id: number, reply: string) => api<{ review: Review | null }>(`/requests/${id}/review/reply`, { reply });
+
+/** E12-1 S13: the caregiver's problem report on a visit, with contact tries and photos (private, loaded with the login token). */
+export const getProblem = (orderId: number, i: number) => api<{ report: ProblemReport | null }>(`/caregiver/tasks/${orderId}/${i}/problem`);
+export const sendProblem = (orderId: number, i: number, body: { kind: ProblemKind; description: string; contacts: { method: ContactMethod; note: string; at: string }[] }) =>
+  api<ProblemReport>(`/caregiver/tasks/${orderId}/${i}/problem`, body);
+export const addProblemContact = (orderId: number, i: number, method: ContactMethod, note: string) => api<ProblemReport>(`/caregiver/tasks/${orderId}/${i}/problem/contacts`, { method, note });
+
+export async function uploadProblemPhoto(orderId: number, i: number, file: Blob): Promise<ProblemReport> {
+  const form = new FormData();
+  form.append('photo', file, 'photo.jpg');
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}/api/caregiver/tasks/${orderId}/${i}/problem/photos`, { method: 'POST', body: form, headers: { authorization: `Bearer ${getToken()}` } });
+  } catch {
+    throw new ApiError('OFFLINE', 'Upload failed. Check your connection and try again', 0);
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+  if (!res.ok) throw new ApiError(body.code ?? `HTTP_${res.status}`, res.status === 413 ? 'Photo is too big (max 10 MB)' : (body.message ?? 'Upload failed'), res.status, body);
+  return body as ProblemReport;
+}
+
+export async function problemPhotoUrl(orderId: number, i: number, photoId: number): Promise<string> {
+  const res = await fetch(`${apiBase()}/api/caregiver/tasks/${orderId}/${i}/problem/photos/${photoId}`, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new ApiError('NO_PHOTO', 'Could not load the photo', res.status);
+  return URL.createObjectURL(await res.blob());
+}

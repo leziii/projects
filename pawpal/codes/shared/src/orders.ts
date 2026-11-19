@@ -97,6 +97,8 @@ export interface OrderView {
   refundSen: number;
   /** The latest charge for this order. */
   payment: { id: number; status: PaymentStatus; method: PaymentMethod | null; failureReason: string | null } | null;
+  /** E12-4 (R52-4): this order holds visits moved from another order with a substitute; paid on that order. */
+  substituteOf: { id: number; number: string } | null;
 }
 
 /** "1:20 pm today", "1:20 pm tomorrow" or "1:20 pm, Sat 1 Nov"; times are Kuala Lumpur time as the server writes them. */

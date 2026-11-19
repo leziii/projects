@@ -26,10 +26,12 @@ export * from './tasks';
 export * from './location';
 export * from './service';
 export * from './cases';
+export * from './exceptions';
+export * from './substitutes';
 export * from './reviews';
 
 export const APP_NAME = 'PawPal';
-export const SHARED_VERSION = '0.52.0';
+export const SHARED_VERSION = '0.56.0';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
@@ -43,3 +45,4 @@ export * from './refunds';
 export * from './waiting';
 export * from './overtime';
 export * from './extra-fees';
+export * from './problems';

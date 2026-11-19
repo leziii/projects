@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type StuckRefund, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask } from '@pawpal/shared';
+import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type StuckRefund, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask, type ProblemReport, type AdminProblemRow, type AdminExceptionRow, type ExceptionDetail, type SubstituteCandidate, type SubstituteOffer } from '@pawpal/shared';
 import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -1577,6 +1577,308 @@ describe('E6-1 caregiver sees requests', () => {
       const o16 = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
       expect(o16.lines.find((l) => l.key === `o${fee.id}`)).toMatchObject({ reason: 'Overtime: unused time', amountSen: 1000, state: 'on_its_way' });
     });
+  });
+
+  describe('E12-1 caregiver reports a problem', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const accepted = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, base: `/api/caregiver/tasks/${order.id}/0/problem` };
+    };
+
+    it('sends a report with contact tries; the owner is told; photos and tries can be added (R49-1 … R49-4)', async () => {
+      const { cg, owner, order, base } = await accepted();
+      expect((await http().get(base).set(auth(cg.token)).expect(200)).body).toEqual({ report: null });
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'dispute_evidence', description: 'x' }).expect(400)).body).toMatchObject({ code: 'PROBLEM_INVALID', message: 'Choose what went wrong' });
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'no_entry', description: ' ' }).expect(400)).body.message).toBe('Describe the problem');
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'no_entry', description: 'x', contacts: [{ method: 'emailed' }] }).expect(400)).body.code).toBe('CONTACT_INVALID');
+
+      const fiveAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+      const r = (await http().post(base).set(auth(cg.token)).send({
+        kind: 'no_entry',
+        description: 'Code wrong, phone not answered twice',
+        contacts: [{ method: 'called', note: 'no answer', at: fiveAgo }, { method: 'called', note: 'again', at: '2020-01-01T00:00:00Z' }],
+      }).expect(200)).body as ProblemReport;
+      expect(r).toMatchObject({ orderId: order.id, number: order.number, index: 0, kind: 'no_entry', status: 'sent', decision: null, photos: [] });
+      expect(r.contacts.map((c) => [c.method, c.note])).toEqual([['called', 'no answer'], ['called', 'again']]);
+      expect(Math.abs(klInstant(r.contacts[0].at).getTime() - Date.parse(fiveAgo))).toBeLessThan(2_000);
+      // A time too far back is taken as now.
+      expect(Date.now() - klInstant(r.contacts[1].at).getTime()).toBeLessThan(60_000);
+
+      const m = (await db().query('SELECT title, body, link_type, link_id FROM messages WHERE user_id = $1 AND title LIKE $2', [owner.id, '%reported a problem%'])).rows;
+      expect(m).toEqual([{ title: "Siti A. reported a problem: Can't get in", body: `Order ${order.number}, visit 1: Code wrong, phone not answered twice. Our team will look at it and may contact you.`, link_type: 'order', link_id: order.id }]);
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'late', description: 'again' }).expect(409)).body.code).toBe('PROBLEM_OPEN');
+
+      // Photos (JPEG/PNG, up to 6) and more contact tries while open.
+      await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', Buffer.from('nope'), 'a.txt').expect(400);
+      for (let n = 0; n < 6; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      expect((await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(409)).body.code).toBe('TOO_MANY_PHOTOS');
+      const more = (await http().post(`${base}/contacts`).set(auth(cg.token)).send({ method: 'knocked', note: '' }).expect(200)).body as ProblemReport;
+      expect(more.photos).toHaveLength(6);
+      expect(more.contacts.map((c) => c.method)).toEqual(['called', 'called', 'knocked']);
+      const photo = await http().get(`${base}/photos/${more.photos[0]}`).set(auth(cg.token)).expect(200);
+      expect(photo.headers['content-type']).toBe('image/jpeg');
+
+      // Only this caregiver sees it.
+      const other = await caregiver();
+      await http().get(base).set(auth(other.token)).expect(404);
+
+      // Admin Cases page: listed, review starts, the caregiver is told.
+      const admin = await adminLogin(app, ['cases']);
+      const rows = (await http().get('/api/admin/problems').set(admin.header).expect(200)).body as AdminProblemRow[];
+      expect(rows.find((x) => x.id === r.id)).toMatchObject({ number: order.number, visit: 1, caregiver: 'Siti A.', kind: 'no_entry', photos: 6, contacts: 3, status: 'sent' });
+      await http().post(`/api/admin/problems/${r.id}/review`).set(admin.header).expect(200);
+      expect((await http().post(`/api/admin/problems/${r.id}/review`).set(admin.header).expect(409)).body.code).toBe('PROBLEM_NOT_NEW');
+      expect(((await http().get(base).set(auth(cg.token)).expect(200)).body as { report: ProblemReport }).report.status).toBe('reviewing');
+      expect((await db().query('SELECT 1 FROM messages WHERE user_id = $1 AND title = $2', [cg.id, 'We are reviewing your report on visit 1'])).rowCount).toBe(1);
+      const noPage = await adminLogin(app, ['payments']);
+      await http().get('/api/admin/problems').set(noPage.header).expect(403);
+    }, 20_000);
+
+    it('cannot report once the report is sent, except evidence while a dispute is open (R49-1, R49-2)', async () => {
+      const { cg, order, base } = await accepted();
+      await db().query("INSERT INTO visit_runs (order_id, idx, status, reported_at) VALUES ($1, 0, 'report_sent', now()) ON CONFLICT (order_id, idx) DO UPDATE SET status = 'report_sent'", [order.id]);
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'late', description: 'x' }).expect(400)).body).toMatchObject({ code: 'CANNOT_REPORT', message: 'Problems can be reported from acceptance until the report is sent' });
+      await db().query("UPDATE visit_runs SET status = 'disputed' WHERE order_id = $1 AND idx = 0", [order.id]);
+      expect((await http().post(base).set(auth(cg.token)).send({ kind: 'late', description: 'x' }).expect(400)).body.code).toBe('PROBLEM_INVALID');
+      expect(((await http().post(base).set(auth(cg.token)).send({ kind: 'dispute_evidence', description: 'Photos of the litter' }).expect(200)).body as ProblemReport).kind).toBe('dispute_evidence');
+    });
+  });
+
+  describe('E12-2 owner reports a problem and follows it', () => {
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const accepted = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, visit: `/api/orders/${order.id}/visits/0` };
+    };
+
+    it('raises a case before the report; the timeline, the caregiver report, photos and notes show; the report goes to review (R50-1 … R50-4)', async () => {
+      const { cg, owner, order, visit } = await accepted();
+      // Report problem is only for a sent report.
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'report').field('description', 'x').expect(400)).body).toMatchObject({ code: 'CASE_INVALID', message: 'Report problem is for a sent report' });
+      // The caregiver reported first.
+      await http().post(`/api/caregiver/tasks/${order.id}/0/problem`).set(auth(cg.token)).send({ kind: 'no_entry', description: 'Gate locked' }).expect(200);
+      const c = (await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'no_show').field('description', 'Nobody came at 10').expect(200)).body as VisitCase;
+      expect(c).toMatchObject({ kind: 'no_show', status: 'sent', reviewingAt: null, decidedAt: null, decision: null, notes: [], photos: [], caregiverReport: { kind: "Can't get in" } });
+      let d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.caseVisits).toEqual([0]);
+      expect(d.runs[0].status).toBe('todo');
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'again').expect(409)).body.code).toBe('CASE_OPEN');
+      const h = await db().query("SELECT from_status, to_status FROM status_history WHERE entity = 'case' AND entity_id = $1", [c.id]);
+      expect(h.rows).toEqual([{ from_status: null, to_status: 'sent' }]);
+      expect((await db().query('SELECT body FROM messages WHERE user_id = $1 AND title = $2', [cg.id, 'Problem raised on visit 1'])).rows[0].body).toContain("(Caregiver didn't come)");
+
+      // R50-4: photos (up to 3 in all) and notes while open.
+      for (let n = 0; n < 3; n++) await http().post(`${visit}/case/photos`).set(auth(owner.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      expect((await http().post(`${visit}/case/photos`).set(auth(owner.token)).attach('photo', JPEG, 'a.jpg').expect(409)).body.code).toBe('TOO_MANY_PHOTOS');
+      expect((await http().post(`${visit}/case/notes`).set(auth(owner.token)).send({ body: ' ' }).expect(400)).body.code).toBe('NOTE_INVALID');
+      const noted = (await http().post(`${visit}/case/notes`).set(auth(owner.token)).send({ body: ' I was home all morning ' }).expect(200)).body as VisitCase;
+      expect(noted.photos).toHaveLength(3);
+      expect(noted.notes.map((n) => n.body)).toEqual(['I was home all morning']);
+      const stranger = await login();
+      await http().post(`${visit}/case/notes`).set(auth(stranger.token)).send({ body: 'hi' }).expect(404);
+
+      // Admin starts the review: the owner's message links to the order (no report yet).
+      const admin = await adminLogin(app, ['cases']);
+      expect(((await http().get('/api/admin/cases').set(admin.header).expect(200)).body as AdminCaseRow[]).find((x) => x.id === c.id)).toMatchObject({ kind: 'no_show', photos: 3 });
+      await http().post(`/api/admin/cases/${c.id}/review`).set(admin.header).expect(200);
+      expect((await db().query('SELECT link_type, link_id FROM messages WHERE user_id = $1 AND title = $2', [owner.id, 'We are reviewing visit 1'])).rows).toEqual([{ link_type: 'order', link_id: order.id }]);
+      expect(((await http().get(`${visit}/case`).set(auth(owner.token)).expect(200)).body as VisitCase).reviewingAt).not.toBeNull();
+
+      // The caregiver still does the visit; the report goes straight to review, not the 12 h clock.
+      const base = `/api/caregiver/tasks/${order.id}/0`;
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      await http().post(`${base}/arrive`).set(auth(cg.token)).expect(200);
+      await http().post(`${base}/enter`).set(auth(cg.token)).expect(200);
+      for (let n = 0; n < 3; n++) await http().post(`${base}/photos`).set(auth(cg.token)).attach('photo', JPEG, 'a.jpg').expect(200);
+      for (const item of ['feed', 'water', 'litter', 'walk']) await http().post(`${base}/check`).set(auth(cg.token)).send({ item, done: true }).expect(200);
+      await http().post(`${base}/report`).set(auth(cg.token)).expect(200);
+      d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs[0].status).toBe('disputed');
+      expect((await db().query('SELECT body FROM messages WHERE user_id = $1 AND title = $2', [owner.id, 'Report for visit 1 is ready'])).rows[0].body).toContain('part of the problem you raised');
+      expect((await http().post(`${visit}/confirm`).set(auth(owner.token)).expect(409)).body.code).toBe('CASE_OPEN');
+
+      // Once decided (E12-3), nothing more can be added.
+      await db().query("UPDATE cases SET status = 'decided', decided_at = now(), decision = 'Full refund' WHERE id = $1", [c.id]);
+      const decided = (await http().get(`${visit}/case`).set(auth(owner.token)).expect(200)).body as VisitCase;
+      expect(decided).toMatchObject({ status: 'decided', decision: 'Full refund' });
+      expect((await http().post(`${visit}/case/notes`).set(auth(owner.token)).send({ body: 'more' }).expect(409)).body.code).toBe('CASE_DECIDED');
+    }, 20_000);
+
+    it('cannot raise on a confirmed or cancelled visit, or before acceptance (R50-1)', async () => {
+      const { owner, order, visit } = await accepted();
+      await db().query("INSERT INTO visit_runs (order_id, idx, status, reported_at, confirmed_at, confirmed_by) VALUES ($1, 0, 'confirmed', now(), now(), 'owner')", [order.id]);
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'x').expect(409)).body.code).toBe('ALREADY_CONFIRMED');
+      await db().query("UPDATE visit_runs SET status = 'cancelled', cancelled_at = now(), cancel_percent = 100, cancel_refund_sen = 0, cancel_credit_sen = 0 WHERE order_id = $1", [order.id]);
+      expect((await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'x').expect(409)).body.code).toBe('CANNOT_RAISE');
+      const cg = await caregiver();
+      const paid = await paidOrder(cg);
+      await succeed(paid.paymentId);
+      expect((await http().post(`/api/orders/${paid.order.id}/visits/0/case`).set(auth(paid.owner.token)).field('kind', 'late').field('description', 'x').expect(409)).body.code).toBe('CANNOT_RAISE');
+    });
+  });
+
+  describe('E12-3 admin handles exceptions', () => {
+    const accepted = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await db().query("UPDATE orders SET entry_method = 'pre_authorised' WHERE id = $1", [order.id]);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      return { cg, owner, order, visit: `/api/orders/${order.id}/visits/0`, admin: `/api/admin/exceptions/${order.id}/0` };
+    };
+    const decidedMessages = async (userId: number) => (await db().query('SELECT body FROM messages WHERE user_id = $1 AND title = $2', [userId, 'Decision on visit 1'])).rows.map((r) => r.body as string);
+
+    it('lists both sides, needs a reason, closes the visit and refunds it (R51-1 … R51-5)', async () => {
+      const { cg, owner, order, visit, admin: url } = await accepted();
+      await http().post(`/api/caregiver/tasks/${order.id}/0/problem`).set(auth(cg.token)).send({ kind: 'no_entry', description: 'Gate locked', contacts: [{ method: 'called', note: 'no answer' }] }).expect(200);
+      await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'late').field('description', 'Nobody by 10:20').expect(200);
+      await http().post(`${visit}/case/notes`).set(auth(owner.token)).send({ body: 'Gate was open' }).expect(200);
+
+      const admin = await adminLogin(app, ['exceptions']);
+      const row = ((await http().get('/api/admin/exceptions').set(admin.header).expect(200)).body as AdminExceptionRow[]).find((r) => r.orderId === order.id);
+      expect(row).toMatchObject({ number: order.number, index: 0, from: 'both', kinds: ["Can't get in", 'Late'], status: 'open', fault: null });
+      const d = (await http().get(url).set(admin.header).expect(200)).body as ExceptionDetail;
+      expect(d).toMatchObject({ caregiver: 'Siti Aminah', run: { status: 'todo', arrivedAt: null, locationFlag: null }, decision: null });
+      expect(d.paidSen).toBeGreaterThan(0);
+      expect(d.caregiverReport).toMatchObject({ kind: "Can't get in", description: 'Gate locked', contacts: [expect.objectContaining({ method: 'called', note: 'no answer' })] });
+      expect(d.ownerCase).toMatchObject({ kind: 'Late', description: 'Nobody by 10:20', notes: [expect.objectContaining({ body: 'Gate was open' })] });
+
+      // R51-3: no reason, or more than the default, is blocked.
+      expect((await http().post(`${url}/decide`).set(admin.header).send({ fault: 'caregiver', refundPercent: 100, reason: ' ' }).expect(400)).body).toMatchObject({ code: 'DECISION_INVALID', message: 'Write the reason for this decision' });
+      expect((await http().post(`${url}/decide`).set(admin.header).send({ fault: 'owner', refundPercent: 20, reason: 'Code wrong' }).expect(400)).body.message).toBe('Refund can be at most 0% for this decision');
+
+      const after = (await http().post(`${url}/decide`).set(admin.header).send({ fault: 'caregiver', refundPercent: 100, reason: 'The caregiver could have called the guard' }).expect(200)).body as ExceptionDetail;
+      expect(after.decision).toMatchObject({ fault: 'caregiver', refundPercent: 100, refundSen: d.paidSen, creditSen: 0, reason: 'The caregiver could have called the guard', admin: admin.username });
+      expect(after.run.status).toBe('closed');
+      expect((await http().post(`${url}/decide`).set(admin.header).send({ fault: 'none', refundPercent: 100, reason: 'Again please' }).expect(409)).body.code).toBe('ALREADY_DECIDED');
+
+      // R51-4: refund through the refund flow; the visit is closed for the caregiver.
+      const pay = await db().query('SELECT amount_sen FROM payments WHERE ref = $1', [`order-${order.id}-refund-x0`]);
+      expect(pay.rows).toEqual([{ amount_sen: d.paidSen }]);
+      const refunds = (await http().get(`/api/orders/${order.id}/refunds`).set(auth(owner.token)).expect(200)).body as OrderRefunds;
+      expect(refunds.lines.find((l) => l.key === 'x0')).toMatchObject({ reason: 'Visit 1: problem decision', amountSen: d.paidSen });
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(409)).body.message).toBe('This visit was closed by our team');
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/0`).set(auth(cg.token)).expect(200)).body as VisitTask).status).toBe('closed');
+
+      // R51-5: both see Decided with the same words, and both are told.
+      const text = `Caregiver at fault · RM${d.paidSen / 100} refunded to the owner. Reason: The caregiver could have called the guard`;
+      expect((await http().get(`${visit}/case`).set(auth(owner.token)).expect(200)).body).toMatchObject({ status: 'decided', decision: text });
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/0/problem`).set(auth(cg.token)).expect(200)).body as { report: ProblemReport }).report).toMatchObject({ status: 'decided', decision: text });
+      expect(await decidedMessages(owner.id)).toEqual([expect.stringContaining(text)]);
+      expect(await decidedMessages(cg.id)).toEqual([expect.stringContaining(text)]);
+      expect(((await http().get('/api/admin/exceptions').set(admin.header).expect(200)).body as AdminExceptionRow[]).find((r) => r.orderId === order.id)).toMatchObject({ status: 'decided', fault: 'caregiver' });
+      const noPage = await adminLogin(app, ['cases']);
+      await http().get('/api/admin/exceptions').set(noPage.header).expect(403);
+    }, 20_000);
+
+    it('owner at fault: no refund, 50/50; disputes on a sent report are not in the queue (R51-1, R51-3)', async () => {
+      const { cg, owner, order, visit, admin: url } = await accepted();
+      await http().post(`${visit}/case`).set(auth(owner.token)).field('kind', 'no_show').field('description', 'Nobody came').expect(200);
+      const admin = await adminLogin(app, ['exceptions']);
+      const after = (await http().post(`${url}/decide`).set(admin.header).send({ fault: 'owner', refundPercent: 0, reason: 'Owner gave the wrong code' }).expect(200)).body as ExceptionDetail;
+      expect(after.decision).toMatchObject({ fault: 'owner', refundSen: 0 });
+      expect((await db().query('SELECT 1 FROM payments WHERE ref = $1', [`order-${order.id}-refund-x0`])).rowCount).toBe(0);
+      expect(await decidedMessages(cg.id)).toEqual([expect.stringContaining('Owner at fault (no handover) · no refund · visit fee split 50/50 with the caregiver.')]);
+
+      // Not an exception: a case on a sent report (E12-5), or nothing raised.
+      const other = await accepted();
+      await db().query("INSERT INTO visit_runs (order_id, idx, status, reported_at) VALUES ($1, 0, 'report_sent', now())", [other.order.id]);
+      await http().post(`${other.visit}/case`).set(auth(other.owner.token)).field('kind', 'report').field('description', 'Litter').expect(200);
+      expect(((await http().get('/api/admin/exceptions').set(admin.header).expect(200)).body as AdminExceptionRow[]).some((r) => r.orderId === other.order.id)).toBe(false);
+      expect((await http().post(`${other.admin}/decide`).set(admin.header).send({ fault: 'none', refundPercent: 100, reason: 'Nothing here' }).expect(404)).body.code).toBe('EXCEPTION_NOT_FOUND');
+      await http().get(`/api/admin/exceptions/${other.order.id}/1`).set(admin.header).expect(404);
+    }, 20_000);
+  });
+
+  describe('E12-4 owner approves a substitute', () => {
+    /** An accepted order whose caregiver reported they cannot do visit 1, and a second caregiver who could. */
+    const setup = async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post(`/api/caregiver/tasks/${order.id}/0/problem`).set(auth(cg.token)).send({ kind: 'cannot_serve', description: 'I am unwell this week' }).expect(200);
+      const cg2 = await caregiver();
+      const admin = await adminLogin(app, ['exceptions']);
+      const v = order.visits;
+      const pick = [{ index: 0, start: v[0].start + 60 }, { index: 1, start: v[1].start }];
+      return { cg, cg2, owner, order, admin, pick, url: `/api/admin/exceptions/${order.id}/0` };
+    };
+    const offer = (url: string, header: Record<string, string>, body: object, code = 200) => http().post(`${url}/substitute`).set(header).send(body).expect(code);
+
+    it('the admin finds a free caregiver and offers; the owner approves; the visits move (R52-1 … R52-4)', async () => {
+      const { cg, cg2, owner, order, admin, pick, url } = await setup();
+      const list = (await http().get(`${url}/candidates?visits=${pick.map((p) => `${p.index}:${p.start}`).join(',')}`).set(admin.header).expect(200)).body as SubstituteCandidate[];
+      expect(list.map((c) => c.id)).toContain(cg2.id);
+      expect(list.map((c) => c.id)).not.toContain(cg.id);
+      expect((await offer(url, admin.header, { caregiverId: cg2.id, visits: pick, reason: 'no' }, 400)).body).toMatchObject({ code: 'SUBSTITUTE_INVALID', message: 'Write the reason for the owner' });
+      expect((await offer(url, admin.header, { caregiverId: cg.id, visits: pick, reason: 'Siti is unwell' }, 409)).body.code).toBe('CAREGIVER_NOT_FREE');
+
+      const sent = (await offer(url, admin.header, { caregiverId: cg2.id, visits: pick, reason: 'Siti is unwell this week' })).body as SubstituteOffer;
+      expect(sent).toMatchObject({ status: 'waiting', caregiver: { id: cg2.id }, from: 'Siti A.', problem: "Can't do the service", reason: 'Siti is unwell this week', newOrder: null });
+      expect(sent.visits).toEqual([{ index: 0, date: order.visits[0].date, start: order.visits[0].start, newStart: pick[0].start }, { index: 1, date: order.visits[1].date, start: order.visits[1].start, newStart: pick[1].start }]);
+      expect((await offer(url, admin.header, { caregiverId: cg2.id, visits: pick, reason: 'Again please' }, 409)).body.code).toBe('SUBSTITUTE_WAITING');
+      expect((await http().post(`${url}/decide`).set(admin.header).send({ fault: 'none', refundPercent: 100, reason: 'Not now' }).expect(409)).body.code).toBe('SUBSTITUTE_WAITING');
+      expect(((await http().get('/api/admin/exceptions').set(admin.header).expect(200)).body as AdminExceptionRow[]).find((r) => r.orderId === order.id)).toMatchObject({ status: 'offered', substitute: 'waiting' });
+      // R52-1: nothing changes until the owner approves.
+      let d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.substitute?.id).toBe(sent.id);
+      expect(d.runs.map((r) => r.status)).toEqual(['todo', 'todo']);
+      expect((await db().query('SELECT 1 FROM messages WHERE user_id = $1 AND title = $2', [owner.id, 'A substitute caregiver for you to approve'])).rowCount).toBe(1);
+      const stranger = await login();
+      await http().post(`/api/orders/${order.id}/substitute/approve`).set(auth(stranger.token)).expect(404);
+
+      const done = (await http().post(`/api/orders/${order.id}/substitute/approve`).set(auth(owner.token)).expect(200)).body as SubstituteOffer;
+      expect(done.status).toBe('approved');
+      expect(done.newOrder).not.toBeNull();
+      d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs.map((r) => r.status)).toEqual(['moved', 'moved']);
+      expect(d.substitute).toBeNull();
+      const moved = (await http().get(`/api/orders/${done.newOrder!.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
+      expect(moved).toMatchObject({ status: 'accepted', caregiver: { id: cg2.id }, substituteOf: { id: order.id, number: order.number } });
+      expect(moved.visits.map((v) => [v.date, v.start, v.paidSen])).toEqual([[order.visits[0].date, pick[0].start, order.visits[0].paidSen], [order.visits[1].date, pick[1].start, order.visits[1].paidSen]]);
+      // R52-4: the new caregiver has the visits; the old one cannot start them.
+      expect(((await http().get(`/api/caregiver/tasks/${done.newOrder!.id}/0`).set(auth(cg2.token)).expect(200)).body as VisitTask).status).toBe('todo');
+      expect((await db().query("SELECT count(*)::int AS n FROM booked_visits WHERE order_id = $1 AND caregiver_id = $2", [done.newOrder!.id, cg2.id])).rows[0].n).toBe(2);
+      expect((await db().query('SELECT count(*)::int AS n FROM booked_visits WHERE order_id = $1', [order.id])).rows[0].n).toBe(0);
+      await http().post('/api/dev/visit-soon').send({ number: order.number, index: 0 }).expect(200);
+      expect((await http().post(`/api/caregiver/tasks/${order.id}/0/arrive`).set(auth(cg.token)).expect(409)).body.message).toBe('This visit moved to another caregiver');
+      expect(((await http().get(`/api/caregiver/tasks/${order.id}/0/problem`).set(auth(cg.token)).expect(200)).body as { report: ProblemReport }).report).toMatchObject({ status: 'decided', decision: expect.stringMatching(/^Substitute approved: .+ takes 2 visits\. Price unchanged\.$/) });
+      for (const [id, title] of [[owner.id, 'Substitute approved'], [cg.id, 'Visit 1, 2 moved to another caregiver'], [cg2.id, 'New visits for you']] as const) {
+        expect((await db().query('SELECT 1 FROM messages WHERE user_id = $1 AND title = $2', [id, title])).rowCount).toBe(1);
+      }
+      expect((await http().post(`/api/orders/${order.id}/substitute/approve`).set(auth(owner.token)).expect(409)).body.code).toBe('NO_SUBSTITUTE');
+      expect(((await http().get('/api/admin/exceptions').set(admin.header).expect(200)).body as AdminExceptionRow[]).find((r) => r.orderId === order.id)).toMatchObject({ status: 'decided', substitute: 'approved' });
+    }, 30_000);
+
+    it('declined or not answered in time: the visits are refunded in full (R52-5)', async () => {
+      const a = await setup();
+      await offer(a.url, a.admin.header, { caregiverId: a.cg2.id, visits: a.pick, reason: 'Siti is unwell this week' });
+      const declined = (await http().post(`/api/orders/${a.order.id}/substitute/decline`).set(auth(a.owner.token)).expect(200)).body as SubstituteOffer;
+      expect(declined.status).toBe('declined');
+      const d = (await http().get(`/api/orders/${a.order.id}/detail`).set(auth(a.owner.token)).expect(200)).body as OrderDetail;
+      expect(d.runs.map((r) => r.status)).toEqual(['closed', 'closed']);
+      const pays = await db().query('SELECT ref, amount_sen FROM payments WHERE ref LIKE $1 ORDER BY ref', [`order-${a.order.id}-refund-x%`]);
+      expect(pays.rows).toEqual([{ ref: `order-${a.order.id}-refund-x0`, amount_sen: a.order.visits[0].paidSen }, { ref: `order-${a.order.id}-refund-x1`, amount_sen: a.order.visits[1].paidSen }]);
+      expect((await db().query('SELECT fault, refund_percent FROM visit_decisions WHERE order_id = $1 ORDER BY idx', [a.order.id])).rows).toEqual([{ fault: 'no_substitute', refund_percent: 100 }, { fault: 'no_substitute', refund_percent: 100 }]);
+
+      const b = await setup();
+      await offer(b.url, b.admin.header, { caregiverId: b.cg2.id, visits: [b.pick[0]], reason: 'Siti is unwell this week' });
+      expect((await http().post('/api/dev/substitute-due').send({ number: b.order.number }).expect(200)).body.expired).toBeGreaterThanOrEqual(1);
+      expect(((await http().get(`/api/orders/${b.order.id}/substitute`).set(auth(b.owner.token)).expect(200)).body as { offer: SubstituteOffer }).offer.status).toBe('expired');
+      const runs = ((await http().get(`/api/orders/${b.order.id}/detail`).set(auth(b.owner.token)).expect(200)).body as OrderDetail).runs.map((r) => r.status);
+      expect(runs).toEqual(['closed', 'todo']);
+      expect((await http().post(`/api/orders/${b.order.id}/substitute/decline`).set(auth(b.owner.token)).expect(409)).body.code).toBe('NO_SUBSTITUTE');
+    }, 30_000);
   });
 
   describe('E8-6 location check', () => {

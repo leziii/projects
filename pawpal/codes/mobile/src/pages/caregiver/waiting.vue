@@ -14,6 +14,7 @@
       <text class="warn">Waiting limit reached.</text>
       <text class="note">If the owner still cannot let you in, ask us for help.</text>
       <HelpButton :order-no="v.number" label="Help with this visit" />
+      <button class="ghost" data-test="limit-report" @click="openProblem">Report a problem</button>
     </view>
 
     <button v-if="v.status === 'in_service'" class="primary" data-test="continue-service" @click="openService">Continue service</button>
@@ -81,6 +82,7 @@ onShow(async () => {
 onHide(stopPoll);
 onUnload(stopPoll);
 
+const openProblem = () => uni.navigateTo({ url: `/pages/caregiver/problem?id=${id}&i=${index}` });
 const openService = () => uni.redirectTo({ url: `/pages/caregiver/service?id=${id}&i=${index}` });
 const back = () => (getCurrentPages().length > 1 ? uni.navigateBack() : uni.redirectTo({ url: `/pages/caregiver/visit?id=${id}&i=${index}` }));
 </script>

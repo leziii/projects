@@ -88,6 +88,7 @@
     </view>
     <text v-if="actionError" class="error" data-test="action-error">{{ actionError }}</text>
 
+    <button v-if="problemKindsFor(v.status).length" class="ghost" data-test="report-problem" @click="openProblem">Report a problem</button>
     <view v-if="v.status !== 'cancelled'" class="card"><HelpButton :order-no="v.number" label="Problem getting in?" /></view>
   </view>
   <view v-else-if="error" class="content">
@@ -107,6 +108,7 @@ import {
   arrivedText,
   WAITING_RULE_TEXT,
   overtimeEarnedText,
+  problemKindsFor,
   waitingState,
   waitingText,
   canArrive,
@@ -196,6 +198,9 @@ async function askWait() {
   if (v.value?.waitingAt) openWaiting();
 }
 const openWaiting = () => uni.navigateTo({ url: `/pages/caregiver/waiting?id=${id}&i=${index}` });
+
+/** E12-1 (R49-1): S13. */
+const openProblem = () => uni.navigateTo({ url: `/pages/caregiver/problem?id=${id}&i=${index}` });
 
 function openService() {
   uni.navigateTo({ url: `/pages/caregiver/service?id=${id}&i=${index}` });

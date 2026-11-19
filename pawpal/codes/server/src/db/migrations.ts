@@ -717,4 +717,111 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE extra_fees ADD COLUMN used_sen INT NULL CHECK (used_sen >= 0)',
     ],
   },
+  {
+    id: '038_problem_reports',
+    sql: [
+      // E12-1 (round 49): the caregiver reports a problem on a visit; one report per visit; the admin decides (E12-3).
+      `CREATE TABLE problem_reports (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx INT NOT NULL,
+        caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        kind VARCHAR(20) NOT NULL CHECK (kind IN ('late', 'no_entry', 'pets_mismatch', 'cannot_serve', 'dispute_evidence')),
+        description VARCHAR(500) NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'reviewing', 'decided')),
+        decision TEXT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        reviewing_at TIMESTAMPTZ(3) NULL,
+        UNIQUE (order_id, idx)
+      )`,
+      `CREATE TABLE problem_photos (
+        id BIGSERIAL PRIMARY KEY,
+        report_id BIGINT NOT NULL REFERENCES problem_reports (id),
+        file_key VARCHAR(80) NOT NULL
+      )`,
+      `CREATE TABLE problem_contacts (
+        id BIGSERIAL PRIMARY KEY,
+        report_id BIGINT NOT NULL REFERENCES problem_reports (id),
+        method VARCHAR(10) NOT NULL CHECK (method IN ('called', 'messaged', 'knocked')),
+        note VARCHAR(100) NOT NULL DEFAULT '',
+        at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+    ],
+  },
+  {
+    id: '039_case_timeline',
+    sql: [
+      // E12-2 (round 50): the owner can raise a problem from acceptance; Caregiver didn't come; Decided (E12-3); notes while open.
+      'ALTER TABLE cases DROP CONSTRAINT cases_kind_check',
+      "ALTER TABLE cases ADD CONSTRAINT cases_kind_check CHECK (kind IN ('report', 'late', 'no_entry', 'no_show', 'other'))",
+      'ALTER TABLE cases DROP CONSTRAINT cases_status_check',
+      "ALTER TABLE cases ADD CONSTRAINT cases_status_check CHECK (status IN ('sent', 'reviewing', 'decided'))",
+      'ALTER TABLE cases ADD COLUMN decided_at TIMESTAMPTZ(3) NULL',
+      'ALTER TABLE cases ADD COLUMN decision TEXT NULL',
+      `CREATE TABLE case_notes (
+        id BIGSERIAL PRIMARY KEY,
+        case_id BIGINT NOT NULL REFERENCES cases (id),
+        body VARCHAR(300) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+    ],
+  },
+  {
+    id: '040_visit_decisions',
+    sql: [
+      // E12-3 (round 51): the admin decides a problem raised before the report; the visit is closed; refund per visit.
+      'ALTER TABLE visit_runs DROP CONSTRAINT visit_runs_status_check',
+      "ALTER TABLE visit_runs ADD CONSTRAINT visit_runs_status_check CHECK (status IN ('arrived', 'in_service', 'report_sent', 'confirmed', 'disputed', 'cancelled', 'closed'))",
+      'ALTER TABLE visit_runs ADD COLUMN closed_at TIMESTAMPTZ(3) NULL',
+      'ALTER TABLE problem_reports ADD COLUMN decided_at TIMESTAMPTZ(3) NULL',
+      // A case raised on a sent report is a dispute (E12-5); one raised before it is an exception (A09).
+      'ALTER TABLE cases ADD COLUMN on_report BOOLEAN NOT NULL DEFAULT true',
+      `UPDATE cases c SET on_report = EXISTS (
+         SELECT 1 FROM visit_runs r WHERE r.order_id = c.order_id AND r.idx = c.idx AND r.reported_at IS NOT NULL AND r.reported_at <= c.created_at)`,
+      `CREATE TABLE visit_decisions (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        fault VARCHAR(10) NOT NULL CHECK (fault IN ('owner', 'caregiver', 'none', 'mismatch')),
+        refund_percent SMALLINT NOT NULL CHECK (refund_percent BETWEEN 0 AND 100),
+        refund_sen INT NOT NULL,
+        credit_sen INT NOT NULL DEFAULT 0,
+        reason VARCHAR(500) NOT NULL,
+        admin_username VARCHAR(64) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        UNIQUE (order_id, idx)
+      )`,
+      "UPDATE admins SET pages = array_append(pages, 'exceptions') WHERE 'cases' = ANY (pages) AND NOT ('exceptions' = ANY (pages))",
+    ],
+  },
+  {
+    id: '041_substitutes',
+    sql: [
+      // E12-4 (round 52): the admin offers a substitute; the owner approves (visits move to a new order) or not (refund).
+      'ALTER TABLE visit_runs DROP CONSTRAINT visit_runs_status_check',
+      "ALTER TABLE visit_runs ADD CONSTRAINT visit_runs_status_check CHECK (status IN ('arrived', 'in_service', 'report_sent', 'confirmed', 'disputed', 'cancelled', 'closed', 'moved'))",
+      'ALTER TABLE visit_runs ADD COLUMN moved_to BIGINT NULL REFERENCES orders (id)',
+      'ALTER TABLE orders ADD COLUMN substitute_of BIGINT NULL REFERENCES orders (id)',
+      'ALTER TABLE visit_decisions DROP CONSTRAINT visit_decisions_fault_check',
+      'ALTER TABLE visit_decisions ALTER COLUMN fault TYPE VARCHAR(16)',
+      "ALTER TABLE visit_decisions ADD CONSTRAINT visit_decisions_fault_check CHECK (fault IN ('owner', 'caregiver', 'none', 'mismatch', 'no_substitute'))",
+      `CREATE TABLE substitutes (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES orders (id),
+        idx SMALLINT NOT NULL,
+        caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        from_caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        visits JSONB NOT NULL,
+        reason VARCHAR(300) NOT NULL,
+        admin_username VARCHAR(64) NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'approved', 'declined', 'expired')),
+        answer_by TIMESTAMPTZ(3) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        decided_at TIMESTAMPTZ(3) NULL,
+        new_order_id BIGINT NULL REFERENCES orders (id)
+      )`,
+      "CREATE UNIQUE INDEX substitutes_one_waiting ON substitutes (order_id) WHERE status = 'waiting'",
+      "CREATE INDEX substitutes_due ON substitutes (answer_by) WHERE status = 'waiting'",
+    ],
+  },
 ];

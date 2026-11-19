@@ -17,8 +17,11 @@ import { DbService, ts } from '../db/db.service';
 import { MessagesService } from '../messages/messages.service';
 import { PaymentsService } from '../payments/payments.service';
 
-/** order-12-refund-v0, order-12-refund-34 (whole charge 34), order-12-refund-w5 / -o5 (unused extra fee 5), each with retries -r1, -r2 … */
-const REF = /^order-(\d+)-refund-([vwo]\d+|\d+)(?:-r(\d+))?$/;
+/**
+ * order-12-refund-v0, order-12-refund-34 (whole charge 34), order-12-refund-w5 / -o5 (unused extra fee 5),
+ * order-12-refund-x0 (E12-3 decision on visit 1), each with retries -r1, -r2 …
+ */
+const REF = /^order-(\d+)-refund-([vwox]\d+|\d+)(?:-r(\d+))?$/;
 
 interface Attempt {
   id: number;
@@ -48,7 +51,7 @@ interface OrderRow {
   charge_id: number | null;
 }
 
-const keyOf = (part: string) => (/^[vwo]/.test(part) ? part : `full-${part}`);
+const keyOf = (part: string) => (/^[vwox]/.test(part) ? part : `full-${part}`);
 const baseOf = (orderId: number, key: string) => `order-${orderId}-refund-${key.startsWith('full-') ? key.slice(5) : key}`;
 
 /** E10-3 O16 (round 44): each refund of an order, retries of failed ones, and the admin's list of stuck ones. */
@@ -207,6 +210,15 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
         const base = baseOf(orderId, `v${v.idx}`);
         if (!map.has(base)) map.set(base, { orderId, key: `v${v.idx}`, base, amountSen: v.money, attempts: [] });
       }
+      // E12-3 (R51-4): money due from a decision, not sent yet.
+      const decided = await this.db.pool.query<{ idx: number; money: number }>(
+        'SELECT idx, refund_sen - credit_sen AS money FROM visit_decisions WHERE order_id = $1 AND refund_sen > credit_sen ORDER BY idx',
+        [orderId],
+      );
+      for (const v of decided.rows) {
+        const base = baseOf(orderId, `x${v.idx}`);
+        if (!map.has(base)) map.set(base, { orderId, key: `x${v.idx}`, base, amountSen: v.money, attempts: [] });
+      }
     }
     return [...map.values()].sort((a, b) => order(a.key) - order(b.key));
   }
@@ -218,4 +230,4 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
 }
 
 /** Whole-order refunds first, then visits in order, then unused extra fees (E11-4). */
-const order = (key: string) => (key.startsWith('v') ? 1 + Number(key.slice(1)) : /^[wo]/.test(key) ? 1e6 + Number(key.slice(1)) : 0);
+const order = (key: string) => (/^[vx]/.test(key) ? 1 + Number(key.slice(1)) : /^[wo]/.test(key) ? 1e6 + Number(key.slice(1)) : 0);

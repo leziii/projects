@@ -44,6 +44,15 @@
       <text v-if="visit.paidSen < visit.quote.total" class="note">After your promo and credit.</text>
     </view>
 
+    <view v-if="hasCase || caseKinds.length" class="card">
+      <text class="section">Problem</text>
+      <template v-if="hasCase">
+        <text class="note" data-test="case-line">{{ run.status === 'closed' ? 'You raised a problem on this visit. Our team has decided it.' : 'You raised a problem on this visit. Our team is looking at it.' }}</text>
+        <button class="primary" data-test="view-case" @click="openProblem">View the problem</button>
+      </template>
+      <button v-else class="danger-ghost" data-test="report-problem" @click="openProblem">Report a problem</button>
+    </view>
+
     <button v-if="cancellable" class="danger-ghost" data-test="cancel-visit" @click="openCancel">Cancel this visit</button>
     <view class="card"><HelpButton :order-no="order.number" label="Help with this visit" /></view>
   </view>
@@ -61,6 +70,7 @@ import {
   NOT_STARTED,
   arrivedText,
   canCancelVisit,
+  caseKindsFor,
   cancelledText,
   confirmedText,
   enteredText,
@@ -110,6 +120,11 @@ const reportLine = computed(() => {
 /** R42-2: opens O15 with this visit ticked. */
 const cancellable = computed(() => !!order.value && canCancelVisit(order.value.status, run.value, visit.value!, new Date()));
 const openCancel = () => uni.navigateTo({ url: `/pages/orders/cancel?id=${id}&i=${index}` });
+
+/** E12-2 (R50-1): report from acceptance, or follow the case on O18. */
+const hasCase = computed(() => !!order.value?.caseVisits.includes(index));
+const caseKinds = computed(() => (order.value ? caseKindsFor(order.value.status, run.value.status) : []));
+const openProblem = () => uni.navigateTo({ url: `/pages/orders/problem?id=${id}&i=${index}` });
 
 const viewReport = () => uni.navigateTo({ url: `/pages/orders/report?id=${id}&i=${index}` });
 

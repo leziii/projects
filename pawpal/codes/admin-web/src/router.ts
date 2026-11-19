@@ -15,6 +15,8 @@ import PetCheckDetail from './views/PetCheckDetail.vue';
 import Promos from './views/Promos.vue';
 import Rules from './views/Rules.vue';
 import Cases from './views/Cases.vue';
+import Exceptions from './views/Exceptions.vue';
+import ExceptionDetail from './views/ExceptionDetail.vue';
 import Reviews from './views/Reviews.vue';
 import LocationFlags from './views/LocationFlags.vue';
 import TestTools from './views/TestTools.vue';
@@ -44,6 +46,8 @@ export const router = createRouter({
     { path: '/payments', name: 'payments', component: Payments, meta: { page: 'payments' } },
     { path: '/locations', name: 'locations', component: LocationFlags, meta: { page: 'locations' } },
     { path: '/cases', name: 'cases', component: Cases, meta: { page: 'cases' } },
+    { path: '/exceptions', name: 'exceptions', component: Exceptions, meta: { page: 'exceptions' } },
+    { path: '/exceptions/:orderId/:i', name: 'exception', component: ExceptionDetail, meta: { page: 'exceptions' } },
     { path: '/reviews', name: 'reviews', component: Reviews, meta: { page: 'reviews' } },
     { path: '/test-tools', name: 'test-tools', component: TestTools, meta: { page: 'test-tools' } },
   ],

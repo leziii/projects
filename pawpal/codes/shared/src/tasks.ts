@@ -10,8 +10,12 @@ import { petsText, type VisitAddress } from './requests';
 
 export const TASK_RULES = { days: 14 } as const;
 
-/** R35-1, R37-4, R40-1 … R40-3: To do → Arrived → In service → Report sent → Confirmed or Under review; "cancelled" with E10. */
-export type TaskStatus = 'todo' | 'arrived' | 'in_service' | 'report_sent' | 'confirmed' | 'disputed' | 'cancelled';
+/**
+ * R35-1, R37-4, R40-1 … R40-3: To do → Arrived → In service → Report sent → Confirmed or Under review; "cancelled" with E10;
+ * "closed" once the admin decides a problem on the visit (E12-3, R51-4); "moved" once the owner approves a substitute
+ * (E12-4, R52-4): the visit goes on in a new order with the new caregiver.
+ */
+export type TaskStatus = 'todo' | 'arrived' | 'in_service' | 'report_sent' | 'confirmed' | 'disputed' | 'cancelled' | 'closed' | 'moved';
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   todo: 'To do',
   arrived: 'Arrived',
@@ -20,6 +24,8 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   confirmed: 'Confirmed',
   disputed: 'Under review',
   cancelled: 'Cancelled',
+  closed: 'Closed',
+  moved: 'Moved to another caregiver',
 };
 
 /** How far one visit has got (R35-1, R35-5); times are KL "YYYY-MM-DD HH:MM:SS.mmm". */

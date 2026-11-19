@@ -32,6 +32,7 @@ import {
   type PetKind,
   type User,
   type VisitReport,
+  type VisitRun,
   NOT_STARTED,
 } from '@pawpal/shared';
 import type { PoolClient } from 'pg';
@@ -48,6 +49,7 @@ import { ScheduleService } from '../caregivers/schedule.service';
 import { BookingsService } from './bookings.service';
 import { RefundsService } from './refunds.service';
 import { ExtraFeesService } from './extra-fees.service';
+import { ExceptionsService } from './exceptions.service';
 import { ReviewsService } from './reviews.service';
 import { VisitRunsService, runKey } from './visit-runs.service';
 
@@ -73,6 +75,8 @@ interface OrderRow {
   created: string;
   paid: string | null;
   deadline: string | null;
+  substitute_of: number | null;
+  substitute_of_number: string | null;
 }
 
 const ENTITY = 'order';
@@ -106,6 +110,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     private readonly reviews: ReviewsService,
     private readonly refunds: RefundsService,
     private readonly fees: ExtraFeesService,
+    private readonly exceptions: ExceptionsService,
   ) {}
 
   onModuleInit() {
@@ -281,6 +286,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       review: await this.reviews.stateOf(id),
       // E11-3 (R47-1): requests waiting for the owner.
       extraFees: (await this.fees.forOrder(user, id)).filter((f) => f.status === 'requested'),
+      // E12-2 (R50-1): visits with an owner case.
+      caseVisits: (await this.db.pool.query<{ idx: number }>('SELECT idx FROM cases WHERE order_id = $1 ORDER BY idx', [id])).rows.map((r) => r.idx),
+      // E12-4 (R52-3): a substitute offer waiting for the owner.
+      substitute: await this.exceptions.offerOf(id).then((s) => (s?.status === 'waiting' ? s : null)),
     };
   }
 
@@ -600,6 +609,14 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /** E12-2 (R50-1): one visit of the owner's order, sent report or not. */
+  async ownVisit(user: User, id: number, index: number): Promise<{ number: string; orderStatus: string; date: string; start: number; run: VisitRun }> {
+    const o = await this.own(user, id);
+    const v = Number.isInteger(index) ? o.visits[index] : undefined;
+    if (!v) throw new NotFoundException({ code: 'VISIT_NOT_FOUND', message: 'Visit not found' });
+    return { number: o.number, orderStatus: o.status, date: v.date, start: v.start, run: await this.runs.of(id, index) };
+  }
+
   /** R39-1: the message link carries the run id. */
   async reportByRun(user: User, runId: number): Promise<VisitReport> {
     const at = await this.runs.visitOf(runId);
@@ -658,12 +675,15 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       endReason: o.end_reason,
       refundSen: refunds.rows[0].sen,
       payment: payment && { id: payment.id, status: payment.status, method: payment.method, failureReason: payment.failureReason },
+      // E12-4 (R52-4): visits moved here from another order, paid there.
+      substituteOf: o.substitute_of ? { id: Number(o.substitute_of), number: o.substitute_of_number! } : null,
     };
   }
 }
 
 const SELECT = `SELECT o.*, ${ts('o.created_at')} AS created, ${ts('o.paid_at')} AS paid, ${ts('o.accept_deadline')} AS deadline,
-  (SELECT code FROM promo_codes p WHERE p.id = o.promo_id) AS promo_code FROM orders o`;
+  (SELECT code FROM promo_codes p WHERE p.id = o.promo_id) AS promo_code,
+  (SELECT number FROM orders s WHERE s.id = o.substitute_of) AS substitute_of_number FROM orders o`;
 /** What the owner pays in money: full price less the promo and the credit. */
 const paySen = (o: Pick<OrderRow, 'total_sen' | 'discount_sen' | 'credit_sen'>) => o.total_sen - o.discount_sen - o.credit_sen;
 const owner = (user: User): Actor => ({ type: 'owner', id: String(user.id) });
