@@ -223,6 +223,11 @@ flowchart LR
 | Request overtime (S11, S14) | S11 "Ask for overtime" while in service → S14; 15-min units RM10, up to own overtime limit; next visit + buffer and blocks checked, Send off on clash; owner told, approve/pay E11-3; one open request per visit, withdraw before paid | Built (E11-2) |
 | Approve and pay extra fees (O19, O11) | "Extra fee to approve" card on the order and message → O19; overtime: approve and pay (booking pay page) or Decline; waiting: pay RM25 prepay or "Let them in now"; unpaid overtime lapses at booked end; no withdraw after paid; failed payment retried | Built (E11-3) |
 | Refund unused extra fees (O16, O19) | Waiting: unused prepay refunded at let in; overtime: unused 15-min units refunded at finish; O16 line and O19 used/refunded text; caregiver sees what was earned | Built (E11-4) |
+| Caregiver reports a problem (S13) | Report a problem on S09/S10/S11 and S14 at the wait limit; type, description, up to 6 photos, contact log; owner told, admin Cases; status and decision shown; no fault or money by the caregiver | Built (E12-1) |
+| Owner reports a problem and follows it (O18) | Report from acceptance (Late, Couldn't get in, Caregiver didn't come, Report problem after report, Other); timeline Sent → Under review → Decided with times; caregiver report on the same visit shown; decision "—" for now; add photos (≤3) and notes while open; money in E12-3 | Built (E12-2) |
+| Admin handles exceptions (A09, A10) | One Exceptions queue (caregiver reports + owner cases before the report); both sides' evidence and visit facts; fault → refund default (owner 0% + 50/50 split, caregiver 100%, nobody 100%, pets/service mismatch admin %), admin may lower; reason required; refund via refund flow; visit closed; both told; substitutes in E12-4 | Built (E12-3) |
+| Owner approves a substitute (A10, O20) | Admin ticks not-started visits, may move each within the day, finds free caregivers (area, pets, time), writes a reason and sends; owner approves on O20 → visits move to a new order with the new caregiver, price unchanged; decline or no answer in 12 h (or before the visit) → those visits refunded in full | Built (E12-4) |
+| Owner approves a substitute (A10, O20) | Admin picks a free, suitable approved caregiver for ticked not-started visits (same day, time may move), with reason; owner approves on O20 → visits move to the new caregiver, both told, platform covers difference; decline or no answer (12 h or visit start) → affected visits fully refunded; no acceptance step for the new caregiver | Decided (KF, 19 Nov) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -327,6 +332,10 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E11-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; also gave an old admin list test more time) | 10 Nov 2026 |
 | E11-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: Declined shown grey, payment-failed line aligned; also fixed an old login test that could pick a used phone) | 12 Nov 2026 |
 | E11-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: O19 says "Paid: the visit can run until" after paying; added admin Test tools "Pass time") | 13 Nov 2026 |
+| E12-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: full stop in the owner's message, admin table widths) | 16 Nov 2026 |
+| E12-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: the form stayed under a sent case, admin Cases columns) | 16 Nov 2026 |
+| E12-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: decision text on its own line on O18/S13, visit page says the problem is decided) | 19 Nov 2026 |
+| E12-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: long free-caregiver list now scrolls, ID verified first) | 19 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -980,3 +989,41 @@ All business rules are decided. Only these remain:
 | R48-3 | Owner | O16 Refunds gets a line ("Waiting: unused RM15" / "Overtime: unused 15 min") with the usual On its way / Refunded; O19 shows "Used 25 min · RM10 · RM15 refunded" |
 | R48-4 | Caregiver | S14 and S11 show what was actually earned ("Waited 25 min · RM10") |
 | R48-5 | Not here | A wait the owner never paid stays unpaid (no-handover story later) |
+
+### Round 49 · 16 Nov 2026 · KF decision (E12-1 caregiver reports a problem)
+| # | Question | Decision |
+|---|---|---|
+| R49-1 | Where | "Report a problem" works on the visit page (S09, S10 arrival) and service (S11), and on S14 once the 60 min wait is reached; from acceptance until the report is sent |
+| R49-2 | What | Type: Late · Can't get in · Pets don't match booking · Can't do the service · Evidence for a dispute (only while the owner's dispute is open); description required (≤500); up to 6 photos |
+| R49-3 | Contact log | "Add a contact try": Called / Messaged / Knocked + short note, time stamped automatically |
+| R49-4 | After sending | Owner gets a message ("zizi reported a problem: Can't get in"); admin sees it on Cases; caregiver sees status Sent → Under review → Decided and the decision ("—" for now); can add photos and contact tries while open; cannot set fault or take money |
+| R49-5 | Not here | Money outcome (no-handover 50/50, refunds, health mismatch) comes with E12-3 when the admin decides |
+
+### Round 50 · 16 Nov 2026 · KF decision (E12-2 owner reports a problem and follows it)
+| # | Question | Decision |
+|---|---|---|
+| R50-1 | When | Owner can report on any visit from acceptance, not only after the report: Late · Couldn't get in · Caregiver didn't come · Report problem (only after the report) · Other; disputes on a sent report keep working as now |
+| R50-2 | Timeline | O18 shows Sent → Under review → Decided, each with its time; a caregiver report on the same visit shows too ("Caregiver reported: Can't get in") |
+| R50-3 | Decision | Shows "—" until the admin decides (E12-3, E12-5) |
+| R50-4 | Adding more | While the case is open the owner can add photos (up to 3 in total) and notes |
+| R50-5 | Not here | Refunds and charges come with E12-3 |
+
+### Round 51 · 18 Nov 2026 · KF decision (E12-3 admin handles exceptions)
+| # | Question | Decision |
+|---|---|---|
+| R51-1 | Queue (A09) | One "Exceptions" list: caregiver reports (S13) and owner cases raised before the report (Late, Couldn't get in, Caregiver didn't come); owner disputes on a sent report stay for E12-5 |
+| R51-2 | Handle page (A10) | Both sides' evidence: descriptions, photos, contact tries and notes, plus visit facts (arrival, wait, location flag) |
+| R51-3 | Decision | Fault, then refund for that visit (default filled in, admin may lower): Owner at fault (no handover) → no refund, visit fee split 50/50 caregiver/platform · Caregiver at fault → 100% · Nobody at fault → 100% · Pets don't match / can't do the service → admin picks a percent. Reason required; no save without it |
+| R51-4 | Money | Refund through the existing refund flow (stuck ones show in the money queue); the 50/50 split is saved for payout (E13-1); a decided visit is closed |
+| R51-5 | Both sides told | O18 and S13 show Decided with the decision and reason; both get a message |
+| R51-6 | Substitutes | Move to E12-4 with O20 (candidate list and owner approval together); E12-3 has only a "Needs substitute" placeholder |
+
+### Round 52 · 19 Nov 2026 · KF decision (E12-4 owner approves a substitute)
+| # | Question | Decision |
+|---|---|---|
+| R52-1 | Admin proposes | On A10 "Needs substitute" lists approved caregivers who serve the area, can take the pets and are free then; admin picks one, may keep the time or move it within the same day, writes a reason and sends to the owner; never swapped automatically |
+| R52-2 | Which visits | Admin ticks the affected not-started visits of the order (usually the problem visit and any later ones) |
+| R52-3 | Owner decides (O20) | Original problem, new caregiver (name, photo, verified badge), times, "Price unchanged, nothing to pay"; Approve / Decline |
+| R52-4 | Approve | Those visits move to the new caregiver (in their tasks); the old caregiver loses them; both told; platform covers any price difference |
+| R52-5 | Decline or no answer | Affected visits fully refunded; no answer within 12 h or before the visit starts (whichever first) counts as decline |
+| R52-6 | Not here | New caregiver does not need to accept (admin checked they are free); payouts per caregiver in E13-1 |

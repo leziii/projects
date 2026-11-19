@@ -83,7 +83,10 @@ export class SubstitutesService implements OnModuleInit, OnModuleDestroy {
   /** R52-1: approved caregivers who serve the area, take the pets and are free at the chosen times. */
   async candidates(orderId: number, visits: { index: number; start: number }[]): Promise<SubstituteCandidate[]> {
     const o = await this.order(this.db.pool, orderId);
-    return (await this.fitting(o, visits)).map((c) => ({ id: c.id, displayName: c.displayName, experienceYears: c.experienceYears, idVerified: c.idVerified, areas: c.areas }));
+    // ID verified first, then the most experienced.
+    return (await this.fitting(o, visits))
+      .sort((a, b) => Number(b.idVerified) - Number(a.idVerified) || b.experienceYears - a.experienceYears || a.id - b.id)
+      .map((c) => ({ id: c.id, displayName: c.displayName, experienceYears: c.experienceYears, idVerified: c.idVerified, areas: c.areas }));
   }
 
   /** R52-1, R52-2: send the offer to the owner. Nothing changes until the owner approves. */

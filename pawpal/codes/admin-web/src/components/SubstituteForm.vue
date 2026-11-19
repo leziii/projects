@@ -11,7 +11,7 @@
     <el-button size="small" :disabled="!chosen.length || busy" data-test="find-caregivers" @click="find">Find caregivers</el-button>
 
     <template v-if="candidates">
-      <p class="label">Free caregivers</p>
+      <p class="label">Free caregivers <span class="muted" data-test="candidate-count">· {{ candidates.length }} · ID verified first, then most experienced</span></p>
       <el-radio-group v-model="caregiverId" class="list" data-test="candidates">
         <el-radio v-for="c in candidates" :key="c.id" :value="c.id" :data-test="`candidate-${c.id}`">
           {{ c.displayName }} <span class="muted">· {{ c.experienceYears }} yr{{ c.idVerified ? ' · ID verified' : '' }} · {{ c.areas.join(', ') }}</span>
@@ -91,7 +91,7 @@ async function send() {
 <style scoped>
 .label { font-weight: 600; margin: 12px 0 4px; }
 .visit { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.list { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.list { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-height: 280px; overflow-y: auto; flex-wrap: nowrap; width: 100%; }
 .muted { color: var(--el-text-color-secondary); font-weight: 400; }
 .hint { color: var(--el-text-color-secondary); font-size: 13px; }
 </style>
