@@ -330,6 +330,12 @@ describe('E5-4 confirm and pay', () => {
   describe('E5-7 invite friends', () => {
     const invite = async (token: string): Promise<InviteInfo> => (await http().get('/api/invite').set(auth(token)).expect(200)).body;
     const settle = (number: string) => http().post('/api/dev/order-settled').send({ number });
+    /** E13-1: the caregiver accepts, every visit is done, then the order settles. */
+    const finish = async (cgToken: string, o: OrderView) => {
+      await http().post('/api/auth/role').set(auth(cgToken)).send({ role: 'caregiver' }).expect(200);
+      await http().post(`/api/requests/${o.id}/accept`).set(auth(cgToken)).expect(200);
+      await http().post('/api/dev/order-finish').send({ number: o.number }).expect(200);
+    };
 
     it('every owner gets one invite code; only a brand-new account can join with it', async () => {
       await http().get('/api/invite').expect(401);
@@ -361,9 +367,10 @@ describe('E5-4 confirm and pay', () => {
       const friend = await ready(code);
       const { order: o, paymentId } = (await pay(friend.token).expect(200)).body as { order: OrderView; paymentId: number };
       // Not paid yet: nothing to settle.
-      expect((await settle(o.number).expect(404)).body.code).toBe('ORDER_NOT_FOUND');
+      expect((await settle(o.number).expect(409)).body.code).toBe('NOT_READY');
       await outcome(paymentId, 'success');
-      expect((await settle(o.number).expect(200)).body).toEqual({ number: o.number, rewarded: true });
+      await finish(friend.cg.token, o);
+      expect((await settle(o.number).expect(200)).body).toMatchObject({ number: o.number, state: 'paying', rewarded: true });
       expect((await settle(o.number).expect(200)).body.rewarded).toBe(false);
 
       for (const who of [inviter, friend]) {
@@ -380,11 +387,14 @@ describe('E5-4 confirm and pay', () => {
       const friend = await ready((await invite(inviter.token)).code);
       const first = (await pay(friend.token).expect(200)).body as { order: OrderView; paymentId: number };
       await outcome(first.paymentId, 'success');
+      await finish(friend.cg.token, first.order);
       await settle(first.order.number).expect(200);
 
       // The friend books again with RM10 credit and a RM5 promo code.
       await http().post('/api/bookings/draft').set(auth(friend.token)).send(friend.input).expect(200);
-      await http().post('/api/bookings/draft/caregiver').set(auth(friend.token)).send({ caregiverId: friend.cg.id }).expect(200);
+      // The first caregiver is booked for those days now (E13-1 accepts the first order), so another one.
+      const cg2 = await caregiver('Nur Aina');
+      await http().post('/api/bookings/draft/caregiver').set(auth(friend.token)).send({ caregiverId: cg2.id }).expect(200);
       await http().post('/api/bookings/draft/entry').set(auth(friend.token)).send({ method: 'live_confirm' }).expect(200);
       const admin = await adminLogin(app);
       const today = klDate(new Date());

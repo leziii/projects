@@ -33,19 +33,6 @@ export interface OrderRefunds {
   lines: RefundLine[];
 }
 
-/** Admin (R44-4): a refund that still failed after every automatic retry. */
-export interface StuckRefund {
-  orderId: number;
-  number: string;
-  key: string;
-  reason: string;
-  amountSen: number;
-  /** Tries so far, the first one included. */
-  tries: number;
-  lastFailure: string | null;
-  failedAt: string;
-}
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** "2026-11-08 13:20:00" → "8 Nov". */

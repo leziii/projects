@@ -82,7 +82,7 @@ test('a wrong invite code is refused at sign-up', async ({ page }) => {
 test('after the first order is settled both get RM10, and it is used on the next booking', async ({ page, browser, request }) => {
   const inviter = await owner(request);
   const { code } = await (await request.get(`${API}/invite`, { headers: { authorization: `Bearer ${inviter}` } })).json();
-  const { token, cat, caregiverId, headers } = await readyToPay(request, browser, true, code);
+  const { token, cat, caregiverId, headers, caregiver } = await readyToPay(request, browser, true, code);
 
   await mobileSession(page, token, '/pages/booking/confirm');
   await expect(page.locator('[data-test=credit-used]')).toHaveCount(0);
@@ -91,14 +91,20 @@ test('after the first order is settled both get RM10, and it is used on the next
   await page.locator('[data-test=outcome-success]').click();
   await expect(page.locator('[data-test=result-title]')).toHaveText('Paid RM40');
   const number = (await page.locator('[data-test=order-number]').textContent())!.trim();
+  // E13-1: the caregiver accepts; Test tools finish the visit and settle the order.
+  const orderId = Number(/[?&]id=(\d+)/.exec(page.url())![1]);
+  expect((await request.post(`${API}/auth/role`, { headers: caregiver.headers, data: { role: 'caregiver' } })).ok()).toBe(true);
+  expect((await request.post(`${API}/requests/${orderId}/accept`, { headers: caregiver.headers })).ok()).toBe(true);
 
   const admin = await browser.newPage();
   await adminSession(admin, request);
   await admin.setViewportSize({ width: 1280, height: 900 });
   await admin.goto(`${ADMIN}/test-tools`);
   await admin.locator('input[data-test=settle-number]').fill(number);
+  await admin.locator('[data-test=finish-run]').click();
+  await expect(admin.locator('.el-message')).toContainText(`Order ${number}: 1 visit(s) finished`);
   await admin.locator('[data-test=settle-run]').click();
-  await expect(admin.locator('.el-message')).toContainText(`Order ${number} settled · invite credit given to both`);
+  await expect(admin.locator('.el-message', { hasText: 'invite credit' })).toContainText(`Order ${number}: Paying · RM34 to the caregiver · invite credit given to both`);
   await admin.close();
 
   const mine = await browser.newPage();

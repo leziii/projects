@@ -125,15 +125,24 @@
     </el-card>
 
     <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
-      <template #header>Mark an order settled (until settlement, E8/E9)</template>
+      <template #header>Settle an order now (E13-1)</template>
       <el-form label-width="110px" data-test="settle-tool" @submit.prevent>
         <el-form-item label="Order number">
           <el-input v-model="orderNumber" placeholder="e.g. P20261101001 (shown on the order page)" data-test="settle-number" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" data-test="settle-run" @click="settle">Mark settled</el-button>
+          <el-button data-test="finish-run" @click="finishVisits">Finish all visits</el-button>
+          <el-button type="primary" data-test="settle-run" @click="settle">Settle now</el-button>
         </el-form-item>
-        <p class="hint">If this is an invited friend's first order, both the friend and the inviter get RM10 credit.</p>
+        <p class="hint">
+          "Finish all visits" marks every visit not done yet as done and confirmed. "Settle now" runs the 10-minute check for this order: it pays the caregiver once
+          every visit is final, no problem is open and every refund has landed. The payout then waits on Payments (test). An invited friend's first settled order
+          gives both RM10 credit.
+        </p>
+        <div v-if="settled" class="settled" data-test="settle-result">
+          <p class="strong" data-test="settle-state">{{ settleResultText(settled) }}</p>
+          <p v-for="(l, k) in settled.lines" :key="k" class="line" data-test="settle-line">{{ l.label }} · {{ formatRM(l.grossSen) }} → {{ formatRM(l.caregiverSen) }}</p>
+        </div>
       </el-form>
     </el-card>
 
@@ -206,7 +215,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { MESSAGE_CATEGORIES, addDays, dayText, formatMyPhone, klDate, timeText, type AlertLogRow, type CaregiverStatus, type RequestAlert } from '@pawpal/shared';
+import { MESSAGE_CATEGORIES, addDays, dayText, formatMyPhone, formatRM, klDate, timeText, type SettleResult, type AlertLogRow, type CaregiverStatus, type RequestAlert } from '@pawpal/shared';
 import {
   LINK_OPTIONS,
   MESSAGE_ROLE_OPTIONS,
@@ -217,7 +226,9 @@ import {
   visitShift,
   visitSoon,
   reportDue,
-  markOrderSettled,
+  settleOrderNow,
+  finishOrderVisits,
+  settleResultText,
   alertLog,
   alertSummary,
   runDueAlerts,
@@ -293,11 +304,23 @@ async function addVisit() {
 }
 
 const orderNumber = ref('');
+const settled = ref<SettleResult | null>(null);
+
+async function finishVisits() {
+  try {
+    const r = await finishOrderVisits(orderNumber.value);
+    ElMessage.success(`Order ${r.number}: ${r.finished} visit(s) finished`);
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
 
 async function settle() {
+  settled.value = null;
   try {
-    const r = await markOrderSettled(orderNumber.value);
-    ElMessage.success(`Order ${r.number} settled${r.rewarded ? ' · invite credit given to both' : ''}`);
+    const r = await settleOrderNow(orderNumber.value);
+    settled.value = r;
+    ElMessage.success(`Order ${r.number}: ${settleResultText(r)}${r.rewarded ? ' · invite credit given to both' : ''}`);
   } catch (err) {
     ElMessage.error((err as Error).message);
   }
@@ -364,4 +387,7 @@ async function save() {
 <style scoped>
 .inline { margin: 0 8px; color: var(--el-text-color-regular); }
 .hint { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; }
+.settled { margin-top: 12px; }
+.strong { font-weight: 600; margin: 0 0 4px; }
+.line { margin: 2px 0; font-size: 13px; }
 </style>

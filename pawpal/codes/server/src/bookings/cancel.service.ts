@@ -175,9 +175,10 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
     const { rows } = await this.db.pool.query<{ order_id: number; number: string; charge_id: number | null; idx: number; money: number }>(
       `SELECT r.order_id, o.number, o.charge_id, r.idx, r.cancel_refund_sen - r.cancel_credit_sen AS money
        FROM visit_runs r JOIN orders o ON o.id = r.order_id
+         -- Ones that can start (a paid charge) first, so refunds that cannot start never hold up the rest.
        WHERE r.status = 'cancelled' AND r.cancel_refund_sen > r.cancel_credit_sen
          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.ref = 'order-' || r.order_id || '-refund-v' || r.idx)
-       ORDER BY r.cancelled_at LIMIT 50`,
+       ORDER BY (o.charge_id IS NULL), r.cancelled_at LIMIT 50`,
     );
     let started = 0;
     for (const r of rows) if (await this.sendRefund(Number(r.order_id), r.number, r.charge_id, r.idx, r.money)) started++;

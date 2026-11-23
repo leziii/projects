@@ -38,6 +38,13 @@
       </view>
       <text class="note" data-test="today-count">{{ todayCount ? `${todayCount} ${todayCount === 1 ? 'visit' : 'visits'} today` : 'No visits today.' }}</text>
     </view>
+    <view class="card" data-test="income-card" @click="openIncome">
+      <view class="row">
+        <text class="section">Income</text>
+        <text class="link">See income ›</text>
+      </view>
+      <text class="note">Pending, paying and paid, kept apart.</text>
+    </view>
     <AlertsCard :user-phone="user.phone" />
   </view>
 </template>
@@ -109,6 +116,11 @@ function openOne(id: number) {
 
 function openMe() {
   uni.navigateTo({ url: '/pages/me/index' });
+}
+
+/** E13-2 (R54-1) */
+function openIncome() {
+  uni.navigateTo({ url: '/pages/caregiver/income' });
 }
 
 function ownerHome() {

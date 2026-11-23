@@ -228,6 +228,11 @@ flowchart LR
 | Admin handles exceptions (A09, A10) | One Exceptions queue (caregiver reports + owner cases before the report); both sides' evidence and visit facts; fault → refund default (owner 0% + 50/50 split, caregiver 100%, nobody 100%, pets/service mismatch admin %), admin may lower; reason required; refund via refund flow; visit closed; both told; substitutes in E12-4 | Built (E12-3) |
 | Owner approves a substitute (A10, O20) | Admin ticks not-started visits, may move each within the day, finds free caregivers (area, pets, time), writes a reason and sends; owner approves on O20 → visits move to a new order with the new caregiver, price unchanged; decline or no answer in 12 h (or before the visit) → those visits refunded in full | Built (E12-4) |
 | Owner approves a substitute (A10, O20) | Admin picks a free, suitable approved caregiver for ticked not-started visits (same day, time may move), with reason; owner approves on O20 → visits move to the new caregiver, both told, platform covers difference; decline or no answer (12 h or visit start) → affected visits fully refunded; no acceptance step for the new caregiver | Decided (KF, 19 Nov) |
+| Automatic order settlement | Pays when all visits final, no open problem/dispute, refunds done; 85/15 service + overtime (promo from platform), waiting 100%, no-handover 50/50, refunded parts nothing; per caregiver order; every 10 min, once only; paying → paid / failed; referral credit at first settlement | ✅ Done (E13-1) |
+| Caregiver income (S15) | Me → Income and dashboard link; Pending / Frozen / Paying (incl. failed, being fixed) / Paid this month shown separately; latest 20 orders with status; note that expected is not withdrawable and paying is not paid; no withdraw button; own income only | ✅ Done (E13-2) |
+| Order settlement detail (S16) | From S15 or payout message; status line; each visit and fee line with its share (expected before settlement, open problems marked); refunds and problems with links; one payout row; matches settlement; own orders only | ✅ Done (E13-3) |
+| Admin money queue (A13, A14) | Money menu lists refunds, fee refunds, payouts (All / Failed / Processing, failed first); detail with every try, reason, time, who; Send again only on failed, same reference so never paid twice; no manual paid; Check with bank after 30 min processing; landed retry notifies caregiver / owner | ✅ Done (E13-4) |
+| Admin dashboard (A02) | One card per queue (caregivers, pets, exceptions, cases, money failed, money processing >30 min) with counts that match the lists; only allowed pages; 0 grey, failed red; refreshes every minute; health tag kept | ✅ Done (E14-1) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -336,6 +341,11 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E12-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: the form stayed under a sent case, admin Cases columns) | 16 Nov 2026 |
 | E12-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: decision text on its own line on O18/S13, visit page says the problem is decided) | 19 Nov 2026 |
 | E12-4 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: long free-caregiver list now scrolls, ID verified first) | 19 Nov 2026 |
+| E13-1 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; fixed: Settle now pop-up shows the real status) | 19 Nov 2026 |
+| E13-2 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots; no fixes needed) | 19 Nov 2026 |
+| E13-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots) | 23 Nov 2026 |
+| E13-4 | ✅ Done · automated tests 0 errors 0 warnings (server 226, shared 216, admin 48, mobile 67, e2e 119) · KF hand test passed (run by Claude with screenshots; fixed: Money list pages of 20, record order, refund-retry queue blocked by old refunds) | 23 Nov 2026 |
+| E14-1 | ✅ Done · automated tests 0 errors 0 warnings (server 227, shared 219, admin 49, mobile 67, e2e 120) · KF hand test passed (run by Claude with screenshots; no fixes needed) | 23 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -1027,3 +1037,54 @@ All business rules are decided. Only these remain:
 | R52-4 | Approve | Those visits move to the new caregiver (in their tasks); the old caregiver loses them; both told; platform covers any price difference |
 | R52-5 | Decline or no answer | Affected visits fully refunded; no answer within 12 h or before the visit starts (whichever first) counts as decline |
 | R52-6 | Not here | New caregiver does not need to accept (admin checked they are free); payouts per caregiver in E13-1 |
+
+### Round 53 · 19 Nov 2026 · KF decision (E13-1 automatic order settlement)
+| # | Question | Decision |
+|---|---|---|
+| R53-1 | When it pays | Every visit final (confirmed, auto-confirmed, closed, cancelled or moved), no open problem or dispute, all refunds finished; until then "pending"; an open dispute shows "frozen" |
+| R53-2 | Amounts | Service + overtime 85% caregiver / 15% platform (promo discount from platform share); waiting fee 100% caregiver; no-handover decision 50/50; refunded parts pay nothing; kept part of a cancellation split 85/15 |
+| R53-3 | Substitutes | Each caregiver is paid only for their own visits, on their own order |
+| R53-4 | How it runs | Check every 10 min; one payout per order, never twice; "paying" → "paid", or "failed" if the bank refuses (to the money queue, E13-4) |
+| R53-5 | Referral | RM10 credit to both when the friend's first order is settled (moved from earlier) |
+| R53-6 | Not here | Income screens (E13-2, E13-3), admin retry (E13-4); a test tool settles an order now |
+
+### Round 54 · 19 Nov 2026 · KF decision (E13-2 caregiver income)
+| # | Question | Decision |
+|---|---|---|
+| R54-1 | Where | Caregiver Me → Income (S15), plus an Income link on the dashboard |
+| R54-2 | Totals | Four separate totals: Pending (accepted, not settled; expected amount by the settlement rules), Frozen (open problem or dispute), Paying (settled, payout not landed; a failed payout counts here with "we are fixing it"), Paid this month (KL month) |
+| R54-3 | Recent orders | Latest 20: number, visits, amount, status tag; tap → S16 (E13-3), until then the request page |
+| R54-4 | Note, no withdraw | "Expected income is not a balance you can withdraw. Paying is not yet paid." No withdraw button (automatic payout) |
+| R54-5 | Privacy | Only the caregiver sees their own income; amounts never in push notification text |
+| R54-6 | Not here | S16 detail (E13-3), bank details unchanged, admin money queue (E13-4) |
+
+### Round 55 · 19 Nov 2026 · KF decision (E13-3 order settlement detail)
+| # | Question | Decision |
+|---|---|---|
+| R55-1 | Where | From an order on S15 or the order link in a payout message |
+| R55-2 | Top | Order number and status line: Pending (with why), Frozen (problem open), Paying, Paid (date), Payout failed · we are fixing it |
+| R55-3 | Lines | Per visit: service "RM40 × 85% = RM34"; cancelled kept part × 85% or "no income"; decided result (caregiver fault no income, no handover 50/50); moved "no income"; waiting fee 100%; overtime × 85%; unsettled orders show the expected amount, visits with an open problem marked "(problem open)" |
+| R55-4 | Refunds and problems | Each refund on the order (reason, amount); each problem with its status and a link to the visit's problem page |
+| R55-5 | Payout record | One row: amount, status, date; before settlement "Paid as one payout once the order is settled" |
+| R55-6 | Match and privacy | Amounts are exactly what settlement saved (or the same rules for expected); only the caregiver themselves |
+
+### Round 56 · 23 Nov 2026 · KF decision (E13-4 admin money queue)
+| # | Question | Decision |
+|---|---|---|
+| R56-1 | Money page (A13) | New Money menu: refunds, fee refunds and order payouts; tabs All / Failed / Processing; failed first; stuck refunds move here from the Payments test page |
+| R56-2 | Detail (A14) | Order and visit, amount, how sent, status, every try (bank reason, time, who) |
+| R56-3 | Send again | Only on failed items; same reference so the bank never pays twice; twice or two admins at once → paid once |
+| R56-4 | No manual paid | No button marks paid or landed; only the bank's answer changes status; processing over 30 min gets "Check with bank" |
+| R56-5 | After a fix | Retried payout lands → caregiver message, S16 shows Paid; landed refund tells the owner |
+| R56-6 | Not here | Real bank, changing bank details, admin roles (any admin can act, every action logged) |
+
+### Round 57 · 23 Nov 2026 · KF decision (E14-1 admin dashboard of queues)
+| # | Question | Decision |
+|---|---|---|
+| R57-1 | Cards | One card per queue with a count: caregivers to review, pets to check, exceptions open, cases (disputes) open, money failed, money processing over 30 min; each opens its list |
+| R57-2 | Counts match lists | Each count uses the same rule as its list |
+| R57-3 | Permissions | Only cards for pages the admin may open |
+| R57-4 | Look | 0 → grey "Nothing waiting"; waiting → colour; money failed → red |
+| R57-5 | Refresh | On open and every minute; server health tag stays at the top |
+| R57-6 | Note | "Normal orders run on their own. Only these queues need you." |
+| R57-7 | Not here | Order search (E14-2), rule history (E14-3), action log (E14-4) |

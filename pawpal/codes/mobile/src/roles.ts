@@ -45,7 +45,7 @@ export function meMenu(role: Role, caregiverApproved: boolean): { title: string;
         { label: 'My tasks', story: 'E8-1', url: '/pages/caregiver/tasks' },
         { label: 'Profile & services', story: 'E4-4', url: '/pages/caregiver/profile' },
         { label: 'Schedule', story: 'E4-5', url: '/pages/caregiver/schedule' },
-        { label: 'Income', story: 'E13-2' },
+        { label: 'Income', story: 'E13-2', url: '/pages/caregiver/income' },
       ],
     });
   }

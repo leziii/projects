@@ -824,4 +824,28 @@ export const MIGRATIONS: Migration[] = [
       "CREATE INDEX substitutes_due ON substitutes (answer_by) WHERE status = 'waiting'",
     ],
   },
+  {
+    id: '042_settlements',
+    sql: [
+      // E13-1 (round 53): one settlement per order, made once every visit is final; its payout is paid once (ref order-N-payout).
+      `CREATE TABLE settlements (
+        order_id BIGINT PRIMARY KEY REFERENCES orders (id),
+        caregiver_id BIGINT NOT NULL REFERENCES users (id),
+        gross_sen INT NOT NULL CHECK (gross_sen >= 0),
+        amount_sen INT NOT NULL CHECK (amount_sen >= 0),
+        lines JSONB NOT NULL,
+        payout_id BIGINT NULL REFERENCES payments (id),
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX idx_settlements_caregiver ON settlements (caregiver_id, created_at)',
+      "CREATE INDEX idx_orders_to_settle ON orders (id) WHERE accepted_at IS NOT NULL AND settled_at IS NULL",
+    ],
+  },
+  {
+    id: '043_money_queue',
+    sql: [
+      // E13-4 (round 56): the Money page; admins who could see Payments can see it.
+      "UPDATE admins SET pages = array_append(pages, 'money') WHERE 'payments' = ANY (pages) AND NOT ('money' = ANY (pages))",
+    ],
+  },
 ];

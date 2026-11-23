@@ -20,6 +20,8 @@ import ExceptionDetail from './views/ExceptionDetail.vue';
 import Reviews from './views/Reviews.vue';
 import LocationFlags from './views/LocationFlags.vue';
 import TestTools from './views/TestTools.vue';
+import Money from './views/Money.vue';
+import MoneyDetail from './views/MoneyDetail.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -49,6 +51,8 @@ export const router = createRouter({
     { path: '/exceptions', name: 'exceptions', component: Exceptions, meta: { page: 'exceptions' } },
     { path: '/exceptions/:orderId/:i', name: 'exception', component: ExceptionDetail, meta: { page: 'exceptions' } },
     { path: '/reviews', name: 'reviews', component: Reviews, meta: { page: 'reviews' } },
+    { path: '/money', name: 'money', component: Money, meta: { page: 'money' } },
+    { path: '/money/:id', name: 'money-item', component: MoneyDetail, meta: { page: 'money' } },
     { path: '/test-tools', name: 'test-tools', component: TestTools, meta: { page: 'test-tools' } },
   ],
 });

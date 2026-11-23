@@ -37,8 +37,8 @@ export class ReferralsService {
   }
 
   /**
-   * The friend's first settled order gives both RM10 credit (R24-4). Called by settlement (E8/E9);
-   * until then by the Test tools. Only the first settled order counts, and only once.
+   * The friend's first settled order gives both RM10 credit (R24-4). Called by settlement (E13-1, R53-5).
+   * Only the first settled order counts, and only once.
    */
   async orderSettled(orderId: number): Promise<{ rewarded: boolean }> {
     return this.db.tx(async (client) => {
@@ -72,17 +72,6 @@ export class ReferralsService {
       }
       return { rewarded: true };
     });
-  }
-
-  /** Test tools: the order is marked settled, which gives the referral reward when it is the friend's first. */
-  async settleByNumber(input: unknown): Promise<{ number: string; rewarded: boolean }> {
-    const number = typeof input === 'string' ? input.trim().toUpperCase() : '';
-    const { rows } = await this.db.pool.query<{ id: number; paid_at: string | null }>(
-      "UPDATE orders SET settled_at = COALESCE(settled_at, now()) WHERE number = $1 AND status = 'pending_accept' RETURNING id, paid_at",
-      [number],
-    );
-    if (!rows[0]) throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'No paid order with this number' });
-    return { number, ...(await this.orderSettled(rows[0].id)) };
   }
 
   /** Credit left now: grants not yet expired (R24-5). */

@@ -176,6 +176,16 @@ export class MessagesService {
       if (!rows[0]) return gone;
       return { ...link, status: rows[0].status, summary: `Order ${rows[0].number}: report for visit ${rows[0].idx + 1}`, gone: false };
     }
+    if (link.type === 'settlement') {
+      // E13-3 (R55-1): one order's settlement detail, as its caregiver sees it.
+      const { rows } = await this.db.pool.query<{ number: string; status: string | null; settled: boolean }>(
+        'SELECT o.number, p.status, o.settled_at IS NOT NULL AS settled FROM orders o LEFT JOIN settlements s ON s.order_id = o.id LEFT JOIN payments p ON p.id = s.payout_id WHERE o.id = $1',
+        [link.id],
+      );
+      if (!rows[0]) return gone;
+      const status = !rows[0].settled ? 'pending' : rows[0].status === 'succeeded' ? 'paid' : rows[0].status === 'failed' ? 'failed' : 'paying';
+      return { ...link, status, summary: `Order ${rows[0].number}: settlement`, gone: false };
+    }
     if (link.type === 'order') {
       const { rows } = await this.db.pool.query<{ number: string; status: OrderStatus }>('SELECT number, status FROM orders WHERE id = $1', [link.id]);
       if (!rows[0]) return gone;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START_OPTIONS, addTestVisit, expireRequest, visitShift, visitSoon, markOrderSettled, STATUS_OPTIONS, alertSummary, sendRequestAlert, sendTestMessage, setCaregiverStatus } from './dev';
+import { START_OPTIONS, addTestVisit, expireRequest, visitShift, visitSoon, settleOrderNow, finishOrderVisits, settleResultText, STATUS_OPTIONS, alertSummary, sendRequestAlert, sendTestMessage, setCaregiverStatus } from './dev';
 
 describe('admin test tools', () => {
   it('posts the caregiver status with a reason', async () => {
@@ -55,14 +55,17 @@ describe('admin test tools', () => {
     expect(JSON.parse(body)).toEqual({ phone: '0123456789', date: '2026-11-01', start: 600, minutes: 45 });
   });
 
-  it('E5-7 mark order settled: sends the order number in capitals', async () => {
-    let body = '';
-    const fake = (async (_url: string, init?: RequestInit) => {
-      body = init?.body as string;
-      return new Response('{"number":"P1","rewarded":true}', { status: 200 });
+  it('E13-1 finish and settle an order: sends the order number in capitals', async () => {
+    const calls: string[] = [];
+    const fake = (async (url: string, init?: RequestInit) => {
+      calls.push(`${url.replace(/^.*\/api/, '')} ${init?.body as string}`);
+      return new Response('{"number":"P1","state":"paying","amountSen":7480,"lines":[],"rewarded":true}', { status: 200 });
     }) as unknown as typeof fetch;
-    expect(await markOrderSettled(' p123 ', fake)).toEqual({ number: 'P1', rewarded: true });
-    expect(JSON.parse(body)).toEqual({ number: 'P123' });
+    await finishOrderVisits(' p123 ', fake);
+    expect(await settleOrderNow(' p123 ', fake)).toMatchObject({ number: 'P1', rewarded: true });
+    expect(calls).toEqual(['/dev/order-finish {"number":"P123"}', '/dev/order-settled {"number":"P123"}']);
+    expect(settleResultText({ state: 'paying', amountSen: 7480 })).toBe('Paying · RM74.80 to the caregiver');
+    expect(settleResultText({ state: 'nothing', amountSen: 0 })).toBe('Nothing to pay');
   });
 
   it('E6-1 expire a request: sends the order number in capitals', async () => {

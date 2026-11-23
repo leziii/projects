@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   REFUND_RETRIES,
@@ -6,11 +6,9 @@ import {
   formatRM,
   refundReason,
   refundTotals,
-  type AdminUser,
   type OrderRefunds,
   type PaymentStatus,
   type RefundLine,
-  type StuckRefund,
   type User,
 } from '@pawpal/shared';
 import { DbService, ts } from '../db/db.service';
@@ -93,6 +91,17 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
     return o ? (await this.summary(o)).dueSen : 0;
   }
 
+  /** E13-3 S16 (R55-4): each refund of the order, as O16 words it. */
+  async linesFor(orderId: number): Promise<RefundLine[]> {
+    const o = await this.order(orderId);
+    return o ? (await this.summary(o)).lines : [];
+  }
+
+  /** E13-1 (R53-1): every refund of the order has landed (one due but not sent yet counts as not landed). */
+  async allLanded(orderId: number): Promise<boolean> {
+    return (await this.refunds(orderId)).every((r) => r.attempts.some((a) => a.status === 'succeeded'));
+  }
+
   /** R44-4: every failed refund with tries left is tried again once the wait has passed. Returns how many were sent. */
   async retryFailed(now = new Date()): Promise<number> {
     let sent = 0;
@@ -104,33 +113,6 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
       if (await this.tryAgain(r, last)) sent++;
     }
     return sent;
-  }
-
-  /** R44-4: refunds that failed every automatic try; the admin sees them on Payments. */
-  async stuck(): Promise<StuckRefund[]> {
-    const out: StuckRefund[] = [];
-    const orders = new Map<number, OrderRow>();
-    for (const r of await this.refunds()) {
-      const last = r.attempts[r.attempts.length - 1];
-      if (r.attempts.some((a) => a.status === 'succeeded') || last.status !== 'failed' || r.attempts.length <= REFUND_RETRIES) continue;
-      if (!orders.has(r.orderId)) orders.set(r.orderId, (await this.order(r.orderId))!);
-      const o = orders.get(r.orderId)!;
-      out.push({ orderId: o.id, number: o.number, key: r.key, reason: refundReason(r.key, o.end_reason), amountSen: r.amountSen, tries: r.attempts.length, lastFailure: last.failure_reason, failedAt: last.updated });
-    }
-    return out;
-  }
-
-  /** R44-4: the admin sends a stuck (or any failed) refund again. */
-  async adminRetry(admin: AdminUser, orderId: unknown, key: unknown): Promise<StuckRefund[]> {
-    const r = (await this.refunds(Number(orderId))).find((x) => x.key === key);
-    const last = r?.attempts[r.attempts.length - 1];
-    if (!r || !last) throw new NotFoundException({ code: 'REFUND_NOT_FOUND', message: 'Refund not found' });
-    if (r.attempts.some((a) => a.status === 'succeeded') || last.status !== 'failed') {
-      throw new ConflictException({ code: 'REFUND_NOT_FAILED', message: 'This refund has not failed' });
-    }
-    this.log.log(`Admin ${admin.username} retries refund ${r.base}`);
-    if (!(await this.tryAgain(r, last))) throw new ConflictException({ code: 'REFUND_NOT_SENT', message: 'The refund could not be sent; try again later' });
-    return this.stuck();
   }
 
   private async tryAgain(r: Refund, last: Attempt): Promise<boolean> {
@@ -146,7 +128,7 @@ export class RefundsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private alert(r: Pick<Refund, 'base' | 'amountSen'>, why: string | null) {
-    this.log.error(`Refund ${r.base} (${formatRM(r.amountSen)}) failed ${REFUND_RETRIES + 1} times: ${why ?? 'no reason'}. Admin: retry it from Payments.`);
+    this.log.error(`Refund ${r.base} (${formatRM(r.amountSen)}) failed ${REFUND_RETRIES + 1} times: ${why ?? 'no reason'}. Admin: send it again from Money.`);
   }
 
   /** R44-5: the owner is told when the money is back; R44-4: a failure after the last automatic try alerts the admin. */

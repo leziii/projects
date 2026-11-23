@@ -14,7 +14,7 @@ describe('E2-4 admin accounts', () => {
 
   it('pages: known only, menu order', () => {
     expect(checkPages(['payments', 'dashboard', 'payments'])).toEqual(['dashboard', 'payments']);
-    expect(() => checkPages(['money'])).toThrow('pages must be a list of');
+    expect(() => checkPages(['bank'])).toThrow('pages must be a list of');
     expect(() => checkPages('payments')).toThrow();
     expect(canSeePage({ pages: ['rules'] }, 'rules')).toBe(true);
     expect(canSeePage({ pages: ['rules'] }, 'payments')).toBe(false);

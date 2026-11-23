@@ -31,7 +31,7 @@ describe('E2-4 admin login', () => {
 
   it('logs in with username, password and authenticator code; logout ends the session', async () => {
     const { username, secret, admin } = await newAdmin();
-    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'test-tools'] });
+    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'test-tools'] });
     const res = await login(` ${username.toUpperCase()} `, totpCode(secret)).expect(200);
     expect(res.body.admin).toEqual(admin);
     expect((await http().get('/api/admin/auth/me').set(bearer(res.body.token)).expect(200)).body).toEqual(admin);
@@ -107,7 +107,7 @@ describe('E2-4 admin login', () => {
     expect((await http().post('/api/dev/admin').send({ username, password: TEST_ADMIN_PASSWORD }).expect(409)).body.code).toBe('USERNAME_TAKEN');
     expect((await http().post('/api/dev/admin').send({ username: 'ok-name', password: 'short' }).expect(400)).body.code).toBe('WEAK_PASSWORD');
     expect((await http().post('/api/dev/admin').send({ username: 'no', password: TEST_ADMIN_PASSWORD }).expect(400)).body.code).toBe('BAD_USERNAME');
-    expect((await http().post('/api/dev/admin').send({ username: 'ok-name2', password: TEST_ADMIN_PASSWORD, pages: ['money'] }).expect(400)).body.code).toBe('BAD_PAGES');
+    expect((await http().post('/api/dev/admin').send({ username: 'ok-name2', password: TEST_ADMIN_PASSWORD, pages: ['bank'] }).expect(400)).body.code).toBe('BAD_PAGES');
     const { rows } = await app.get(DbService).pool.query('SELECT password_hash FROM admins WHERE username = $1', [username]);
     expect(rows[0].password_hash).not.toContain(TEST_ADMIN_PASSWORD);
   });

@@ -1,4 +1,4 @@
-import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review, OvertimeInfo, ContactMethod, ProblemKind, ProblemReport } from '@pawpal/shared';
+import type { CheckItem, GeoPoint, RejectReason, RequestDetail, RequestList, TaskList, VisitTask, Review, OvertimeInfo, ContactMethod, ProblemKind, ProblemReport, CaregiverIncome, OrderSettlement } from '@pawpal/shared';
 import { ApiError, api, apiBase, getToken } from './client';
 
 export interface CaregiverHome {
@@ -8,6 +8,10 @@ export interface CaregiverHome {
 
 /** S01 and S06 (E6-1). */
 export const getHome = () => api<CaregiverHome>('/caregiver/home');
+/** E13-2 S15 */
+export const getIncome = () => api<CaregiverIncome>('/caregiver/income');
+/** E13-3 S16 */
+export const getSettlement = (orderId: number) => api<OrderSettlement>(`/caregiver/income/${orderId}`);
 export const getRequests = () => api<RequestList>('/requests');
 export const getRequest = (id: number) => api<RequestDetail>(`/requests/${id}`);
 /** R25-8: why a caregiver account is paused. */

@@ -1,7 +1,6 @@
 import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { AdminUser, OrderRefunds, StuckRefund, User } from '@pawpal/shared';
-import { AdminGuard, CurrentAdmin, ForPage } from '../admin/admin.guard';
+import type { OrderRefunds, User } from '@pawpal/shared';
 import { AuthGuard, CurrentUser } from '../auth/auth.guard';
 import { RefundsService } from './refunds.service';
 
@@ -14,25 +13,6 @@ export class RefundsController {
   @Get()
   list(@CurrentUser() user: User, @Param('id', ParseIntPipe) id: number): Promise<OrderRefunds> {
     return this.refunds.forOrder(user, id);
-  }
-}
-
-/** R44-4: refunds that failed every automatic try, on the Payments page. */
-@Controller('admin/refunds')
-@UseGuards(AdminGuard)
-@ForPage('payments')
-export class AdminRefundsController {
-  constructor(private readonly refunds: RefundsService) {}
-
-  @Get('stuck')
-  stuck(): Promise<StuckRefund[]> {
-    return this.refunds.stuck();
-  }
-
-  @Post('retry')
-  @HttpCode(200)
-  retry(@CurrentAdmin() admin: AdminUser, @Body() body: { orderId?: unknown; key?: unknown }): Promise<StuckRefund[]> {
-    return this.refunds.adminRetry(admin, body?.orderId, body?.key);
   }
 }
 

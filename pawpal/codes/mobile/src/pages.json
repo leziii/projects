@@ -168,6 +168,20 @@
 			}
 		},
 		{
+			"path": "pages/caregiver/income",
+			"style": {
+				"navigationBarTitleText": "Income",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/caregiver/settlement",
+			"style": {
+				"navigationBarTitleText": "Order income",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
 			"path": "pages/caregiver/tasks",
 			"style": {
 				"navigationBarTitleText": "My tasks",

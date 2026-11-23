@@ -43,22 +43,27 @@ test('track refunds: details from the order, being processed, then refunded with
   expect(items.map((m) => m.title)).toContain('Refund received: RM40');
 });
 
-// R44-4: after 3 failed retries the admin sees the refund on Payments and sends it again.
-test('stuck refund: admin sees it on Payments and sends it again', async ({ page, browser, request }) => {
+// R44-4, E13-4 R56-3: after 3 failed retries the admin sees the refund on Money and sends it again.
+test('stuck refund: admin sees it on Money and sends it again', async ({ page, browser, request }) => {
   const { r, order } = await booked(request, browser, false);
   expect((await request.post(`${API}/orders/${order.id}/cancel`, { headers: r.headers, data: { visits: [0], percents: [100] } })).ok()).toBe(true);
-  const admin = await adminSession(page, request, ['payments']);
+  const admin = await adminSession(page, request, ['payments', 'money']);
   const base = `order-${order.id}-refund-v0`;
   for (const [i, ref] of [base, `${base}-r1`, `${base}-r2`, `${base}-r3`].entries()) {
     if (i) expect((await request.post(`${API}/dev/refunds-retry`, { data: { minutesLater: 4 * i } })).ok()).toBe(true);
     expect((await outcome(request, await refundId(request, admin.header, ref), 'failure')).ok()).toBe(true);
   }
 
-  await page.goto(`${ADMIN}/payments`);
-  await expect(page.locator('[data-test=stuck-refunds]')).toContainText(order.number);
-  await expect(page.locator('[data-test=stuck-refunds]')).toContainText('Declined by bank (mock)');
-  await page.locator(`[data-test=retry-${order.id}-v0]`).click();
-  await expect(page.locator('.el-message')).toContainText(`Refund for ${order.number} sent again`);
-  await expect(page.locator(`[data-test=retry-${order.id}-v0]`)).toHaveCount(0);
+  await page.goto(`${ADMIN}/money`);
+  await page.locator('[data-test=money-tab-failed]').click();
+  const row = page.locator('[data-test=money] .el-table__row', { hasText: order.number });
+  await expect(row).toContainText('Declined by bank (mock)');
+  await expect(row).toContainText('4 tries');
+  await page.locator(`[data-test="money-open-${base}"]`).click();
+  await page.locator('[data-test=send-again]').click();
+  await page.locator('.el-message-box .el-button--primary').click();
+  await expect(page.locator('.el-message', { hasText: 'Sent again' })).toBeVisible();
+  await expect(page.locator('[data-test=money-status]')).toHaveText('Processing');
+  await expect(page.locator('[data-test=send-again]')).toHaveCount(0);
   await refundId(request, admin.header, `${base}-r4`);
 });

@@ -16,12 +16,13 @@ import { SupportModule } from './support/support.module';
 import { FilesModule } from './files/files.module';
 import { PetsModule } from './pets/pets.module';
 import { AddressesModule } from './addresses/addresses.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { PromosModule } from './promos/promos.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { CaregiversModule } from './caregivers/caregivers.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DbModule, RedisModule, SmsModule, FilesModule, HistoryModule, MessagesModule, AuthModule, AdminModule, AlertsModule, HealthModule, RulesModule, SupportModule, PetsModule, AddressesModule, CaregiversModule, PromosModule, ReferralsModule, BookingsModule, PaymentsModule, DevModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DbModule, RedisModule, SmsModule, FilesModule, HistoryModule, MessagesModule, AuthModule, AdminModule, AlertsModule, HealthModule, RulesModule, SupportModule, PetsModule, AddressesModule, CaregiversModule, PromosModule, ReferralsModule, BookingsModule, DashboardModule, PaymentsModule, DevModule],
 })
 export class AppModule {}

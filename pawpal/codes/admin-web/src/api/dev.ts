@@ -1,4 +1,4 @@
-import { CAREGIVER_STATUSES, DAY_END, DAY_START, timeText, type AlertLogRow, type BookedVisit, type AlertSent, type RequestAlert, type CaregiverStatus, type Message, type MessageCategory, type MessageLinkType, type Role, type User } from '@pawpal/shared';
+import { CAREGIVER_STATUSES, DAY_END, DAY_START, SETTLEMENT_STATE_LABEL, formatRM, timeText, type SettleResult, type AlertLogRow, type BookedVisit, type AlertSent, type RequestAlert, type CaregiverStatus, type Message, type MessageCategory, type MessageLinkType, type Role, type User } from '@pawpal/shared';
 import { api } from './payments';
 
 /** Stand-in for caregiver review until E4-2: set a caregiver's status by phone number. */
@@ -56,9 +56,15 @@ export const addTestVisit = (phone: string, date: string, start: number, minutes
 /** Start times for the test visit: every half hour in service hours. */
 export const START_OPTIONS = Array.from({ length: (DAY_END - DAY_START) / 30 + 1 }, (_, i) => DAY_START + i * 30).map((value) => ({ value, label: timeText(value) }));
 
-/** Stand-in for settlement (E5-7 until E8/E9): marks an order settled so invite rewards are given. */
-export const markOrderSettled = (number: string, f?: typeof fetch) =>
-  api<{ number: string; rewarded: boolean }>('/dev/order-settled', { number: number.trim().toUpperCase() }, f);
+/** E13-1 (R53-6): settle an order now instead of waiting for the 10-minute check. */
+export const settleOrderNow = (number: string, f?: typeof fetch) => api<SettleResult>('/dev/order-settled', { number: number.trim().toUpperCase() }, f);
+/** E13-1: mark every visit not final yet as done and confirmed, so the order can settle. */
+export const finishOrderVisits = (number: string, f?: typeof fetch) =>
+  api<{ number: string; finished: number }>('/dev/order-finish', { number: number.trim().toUpperCase() }, f);
+
+/** "Paying · RM74.80 to the caregiver" */
+export const settleResultText = (r: Pick<SettleResult, 'state' | 'amountSen'>) =>
+  r.state === 'nothing' ? SETTLEMENT_STATE_LABEL.nothing : `${SETTLEMENT_STATE_LABEL[r.state]} · ${formatRM(r.amountSen)} to the caregiver`;
 
 /** Makes an open request's deadline pass now (E6-1), to see it move to History. */
 export const expireRequest = (number: string, f?: typeof fetch) => api<{ number: string }>('/dev/request-expire', { number: number.trim().toUpperCase() }, f);
