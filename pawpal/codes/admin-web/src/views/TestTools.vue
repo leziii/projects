@@ -215,13 +215,21 @@
       <el-button type="primary" data-test="rules-start-now" @click="rulesNow">Start it now</el-button>
       <p class="hint">Moves the start date of the version waiting on Rules to today, so new orders use it without waiting for midnight.</p>
     </el-card>
+
+    <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
+      <template #header>Monitoring (E15-3)</template>
+      <el-button type="primary" data-test="test-error" @click="testError">Send a test error</el-button>
+      <el-button type="primary" data-test="test-alert" @click="testAlert">Send a test money alert</el-button>
+      <p v-if="monitorResult" class="monitor-result" data-test="monitor-result">{{ monitorResult }}</p>
+      <p class="hint">The test error goes to Sentry from the server and from this browser when SENTRY_DSN is set. The test alert is a WhatsApp message to the support number.</p>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { MESSAGE_CATEGORIES, addDays, dayText, formatMyPhone, formatRM, klDate, timeText, type SettleResult, type AlertLogRow, type CaregiverStatus, type RequestAlert } from '@pawpal/shared';
+import { MESSAGE_CATEGORIES, TEST_ERROR_MESSAGE, addDays, dayText, formatMyPhone, formatRM, klDate, timeText, type SettleResult, type AlertLogRow, type CaregiverStatus, type RequestAlert } from '@pawpal/shared';
 import {
   LINK_OPTIONS,
   MESSAGE_ROLE_OPTIONS,
@@ -234,6 +242,8 @@ import {
   reportDue,
   settleOrderNow,
   startRulesNow,
+  sendTestError,
+  sendTestMoneyAlert,
   finishOrderVisits,
   settleResultText,
   alertLog,
@@ -245,6 +255,7 @@ import {
   setWhatsappUnreachable,
   type TestMessage,
 } from '../api/dev';
+import { sendBrowserTestError } from '../sentry';
 
 const phone = ref('');
 const status = ref<CaregiverStatus>('approved');
@@ -317,6 +328,27 @@ async function finishVisits() {
   try {
     const r = await finishOrderVisits(orderNumber.value);
     ElMessage.success(`Order ${r.number}: ${r.finished} visit(s) finished`);
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
+
+const monitorResult = ref('');
+
+async function testError() {
+  try {
+    const r = await sendTestError();
+    const browser = sendBrowserTestError(TEST_ERROR_MESSAGE);
+    monitorResult.value = `Server: ${r.message}${r.eventId ? ` Event ${r.eventId}.` : ''} Browser: ${browser ? `sent, event ${browser}.` : 'Sentry is off (no VITE_SENTRY_DSN).'}`;
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
+
+async function testAlert() {
+  try {
+    const r = await sendTestMoneyAlert();
+    monitorResult.value = `Sent to ${r.sentTo}: ${r.text}`;
   } catch (err) {
     ElMessage.error((err as Error).message);
   }
@@ -407,4 +439,5 @@ async function save() {
 .settled { margin-top: 12px; }
 .strong { font-weight: 600; margin: 0 0 4px; }
 .line { margin: 2px 0; font-size: 13px; }
+.monitor-result { margin: 10px 0 4px; font-size: 13px; color: var(--el-text-color-primary); }
 </style>

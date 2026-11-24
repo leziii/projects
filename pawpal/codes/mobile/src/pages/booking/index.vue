@@ -88,6 +88,7 @@ import { requireUser } from '@/api/auth';
 import { clearDraft, getDraft, saveDraft } from '@/api/booking';
 import { listPets } from '@/api/pets';
 import { currentRules } from '@/api/rules';
+import { trackStep } from '@/api/funnel';
 import { OVERTIME_OPTIONS, addVisit, draftInput, levelOptions, lineText, nextHint, nextStep, removeVisit, visitDays } from '@/booking';
 
 const draft = ref<BookingDraft | null>(null);
@@ -106,6 +107,7 @@ const days = computed(() => visitDays(form.value.visits));
 
 onShow(async () => {
   if (!(await requireUser('/pages/booking/index'))) return;
+  void trackStep('setup');
   const [d, p, a, r] = await Promise.all([getDraft(), listPets(), listAddresses(), currentRules()]);
   rules.value = r;
   pets.value = p.filter((x) => x.status !== 'rejected');

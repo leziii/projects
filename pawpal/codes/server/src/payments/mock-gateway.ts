@@ -36,6 +36,11 @@ export class MockGateway implements PaymentGateway {
     return Promise.resolve(this.open('po'));
   }
 
+  /** The mock is part of this server, so it is up while the server is. */
+  ping(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
   query(gatewayRef: string): Promise<GatewayStatus> {
     return Promise.resolve(this.txns.get(gatewayRef)?.status ?? 'pending');
   }

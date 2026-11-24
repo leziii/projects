@@ -12,7 +12,7 @@ export const ADMIN_RULES = {
 } as const;
 
 /** Every admin page that needs a permission. New pages are added here as they are built. */
-export const ADMIN_PAGES = ['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions', 'test-tools'] as const;
+export const ADMIN_PAGES = ['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions', 'funnel', 'test-tools'] as const;
 export type AdminPage = (typeof ADMIN_PAGES)[number];
 
 export const ADMIN_PAGE_LABEL: Record<AdminPage, string> = {
@@ -29,6 +29,7 @@ export const ADMIN_PAGE_LABEL: Record<AdminPage, string> = {
   reviews: 'Reviews',
   money: 'Money',
   actions: 'Action log',
+  funnel: 'Funnel',
   'test-tools': 'Test tools',
 };
 

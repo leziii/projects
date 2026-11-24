@@ -891,4 +891,30 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX idx_history_admin ON status_history (created_at DESC, id DESC) WHERE actor_type = \'admin\'',
     ],
   },
+  {
+    id: '047_monitoring',
+    sql: [
+      // E15-3 (round 61): admins with every other page get the Funnel page (R61-4).
+      "UPDATE admins SET pages = array_append(pages, 'funnel') WHERE pages @> ARRAY['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions'] AND NOT ('funnel' = ANY (pages))",
+      // R61-4: one row per person, step and KL day; a repeat adds nothing.
+      `CREATE TABLE funnel_events (
+        day DATE NOT NULL,
+        step VARCHAR(16) NOT NULL CHECK (step IN ('home', 'setup', 'caregiver', 'pay')),
+        visitor VARCHAR(64) NOT NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        PRIMARY KEY (day, step, visitor)
+      )`,
+      // R61-3: every money alert sent; one row per failure, so it is never sent twice.
+      `CREATE TABLE money_alerts (
+        id BIGSERIAL PRIMARY KEY,
+        key VARCHAR(64) NOT NULL,
+        occurrence VARCHAR(32) NOT NULL,
+        text VARCHAR(500) NOT NULL,
+        sent_to VARCHAR(32) NULL,
+        error VARCHAR(255) NULL,
+        sent_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        UNIQUE (key, occurrence)
+      )`,
+    ],
+  },
 ];

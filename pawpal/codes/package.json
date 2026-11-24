@@ -17,6 +17,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "typecheck": "pnpm -r typecheck",
     "e2e": "pnpm --filter @pawpal/e2e e2e",
+    "deploy:test": "sh deploy/test.sh",
     "icons": "pnpm --filter @pawpal/shared build && node scripts/make-icons.mjs",
     "admin:create": "pnpm --filter @pawpal/shared build && pnpm --filter @pawpal/server admin:create"
   },

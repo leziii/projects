@@ -32,7 +32,7 @@ describe('E2-4 admin login', () => {
 
   it('logs in with username, password and authenticator code; logout ends the session', async () => {
     const { username, secret, admin } = await newAdmin();
-    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions', 'test-tools'] });
+    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions', 'funnel', 'test-tools'] });
     const res = await login(` ${username.toUpperCase()} `, totpCode(secret)).expect(200);
     expect(res.body.admin).toEqual(admin);
     expect((await http().get('/api/admin/auth/me').set(bearer(res.body.token)).expect(200)).body).toEqual(admin);

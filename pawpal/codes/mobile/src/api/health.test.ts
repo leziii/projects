@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fetchHealth, healthLabel } from './health';
 
-const ok = { status: 'ok', database: 'up', redis: 'up', version: '0.1.0' } as const;
+const ok = { status: 'ok', database: 'up', redis: 'up', gateway: 'up', version: '0.1.0' } as const;
 
 describe('mobile health', () => {
   it('reads the server health report', async () => {

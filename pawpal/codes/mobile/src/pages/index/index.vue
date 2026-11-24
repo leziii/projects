@@ -45,6 +45,7 @@
 import { ref } from 'vue';
 import { onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { currentRules } from '@/api/rules';
+import { trackStep } from '@/api/funnel';
 import { BRAND, DEFAULT_RULES, logoDataUrl, priceList, type HealthReport, type User } from '@pawpal/shared';
 import { currentUser, loginUrl } from '@/api/auth';
 import { fetchHealth, healthLabel } from '@/api/health';
@@ -82,6 +83,7 @@ onLoad(async () => {
   hint.value = installHint(ua(), isStandalone(), false);
   globalThis.addEventListener?.('beforeinstallprompt', onPrompt);
   globalThis.addEventListener?.('appinstalled', onInstalled);
+  void trackStep('home');
   health.value = await fetchHealth();
 });
 

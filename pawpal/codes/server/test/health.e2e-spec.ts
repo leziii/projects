@@ -17,8 +17,8 @@ describe('GET /api/health', () => {
 
   afterAll(() => app.close());
 
-  it('reports the database and Redis as up', async () => {
+  it('reports the database, Redis and the payment gateway as up (R61-2)', async () => {
     const res = await request(app.getHttpServer()).get('/api/health').expect(200);
-    expect(res.body).toEqual({ status: 'ok', database: 'up', redis: 'up', version: SHARED_VERSION });
+    expect(res.body).toEqual({ status: 'ok', database: 'up', redis: 'up', gateway: 'up', version: SHARED_VERSION });
   });
 });

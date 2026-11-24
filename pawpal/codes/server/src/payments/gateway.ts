@@ -20,6 +20,8 @@ export interface PaymentGateway {
   query(gatewayRef: string): Promise<GatewayStatus>;
   /** Verifies the signature and reads the event; throws on a bad signature. */
   parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): GatewayEvent;
+  /** E15-3 (R61-2): the gateway answers; false (not a throw) when it cannot be reached. */
+  ping(): Promise<boolean>;
 }
 
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');

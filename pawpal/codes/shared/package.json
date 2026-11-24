@@ -1,9 +1,12 @@
 {
   "name": "@pawpal/shared",
-  "version": "0.62.0",
+  "version": "0.63.0",
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

@@ -42,6 +42,7 @@ import { onLoad } from '@dcloudio/uni-app';
 import { PAYMENT_METHODS, cardNumberText, expiryText, extraFeeTitle, formatRM, klDate, testCardProblems, type ExtraFee, type MockOutcome, type OrderView } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { getExtraFees, getOrder, testOutcome } from '@/api/booking';
+import { trackStep } from '@/api/funnel';
 
 const order = ref<OrderView | null>(null);
 const paymentId = ref(0);
@@ -62,6 +63,7 @@ watch(() => card.cvv, (v) => { const t = String(v).replace(/\D/g, '').slice(0, 3
 onLoad(async (q) => {
   if (!(await requireUser('/pages/booking/confirm'))) return;
   paymentId.value = Number(q?.payment);
+  if (!q?.fee) void trackStep('pay');
   if (q?.fee) fee.value = (await getExtraFees(Number(q.order))).find((f) => f.id === Number(q.fee)) ?? null;
   order.value = await getOrder(Number(q?.order));
 });

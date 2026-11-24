@@ -1,0 +1,46 @@
+# E15-2 (R62-2): HTTPS for the app and admin. Caddy gets and renews the certificates by itself.
+# APP_DOMAIN and ADMIN_DOMAIN come from deploy/.env (for example app.pawpal.my and admin.pawpal.my).
+{
+	email {$TLS_EMAIL}
+	{$CADDY_GLOBAL}
+}
+
+(common) {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	# R62-4: Test tools are behind a password (staging only; production answers 404 anyway).
+	@dev path /api/dev/*
+	basic_auth @dev {
+		{$DEV_TOOLS_USER} {$DEV_TOOLS_HASH}
+	}
+	handle /api/* {
+		reverse_proxy server:3000
+	}
+}
+
+{$APP_DOMAIN} {
+	import common
+	handle {
+		root * /srv/app
+		# The service worker and app start page must never be cached, so updates reach phones.
+		@fresh path /sw.js /index.html /manifest.webmanifest
+		header @fresh Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	import common
+	handle {
+		root * /srv/admin
+		header /index.html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

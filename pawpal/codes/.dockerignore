@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/unpackage
+**/*.tsbuildinfo
+**/.env
+server/uploads
+tests/test-results
+tests/playwright-report
+deploy/.env
+*.tgz
+.git

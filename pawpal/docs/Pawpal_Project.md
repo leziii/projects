@@ -236,6 +236,8 @@ flowchart LR
 | Admin orders (A07, A08) | Orders menu with masked owner, visits, booking and money status; separate booking and money filters, date, number/phone search; detail with visits, money, links, full record; address shown on request and logged; no new edits | ✅ Done (E14-2) |
 | Admin rules with history (A15) | Rules page edits prices, minimum times, extra pet, overtime, waiting, cancel refunds and split as a new version from tomorrow or later; reason and checks with a from → to preview; one waiting version (replace or withdraw); orders keep the version they were paid under; history list | ✅ Done (E14-3) |
 | Admin action log | Action log menu lists every admin action (who, when, what, before → after, reason), newest first, 50 per page, filters by admin, kind and date, links to the item; read only; only admins with the page | ✅ Done (E14-4) |
+| Monitoring | Sentry in server, admin and mobile (off without SENTRY_DSN, no phones, addresses or IC numbers); /api/health checks database, Redis and gateway; WhatsApp money alert on failed or 30 min processing payment, refund or payout, once per failure per hour; admin Funnel page (home → setup → caregiver → pay page → paid, 7 and 30 days); test error and test alert buttons | ✅ Done (E15-3) |
+| Hosting in Malaysia | AWS Malaysia region; Docker with server, database, Redis and automatic HTTPS; app and admin on their own addresses; daily backup of database and photos kept 14 days with a tested restore; staging with test services and password-protected Test tools; production refuses test services | ✅ Done (E15-2) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -352,6 +354,8 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E14-2 | ✅ Done · automated tests 0 errors 0 warnings (server 229, shared 222, admin 51, mobile 67, e2e 121) · KF hand test passed (run by Claude with screenshots; no fixes needed) | 23 Nov 2026 |
 | E14-3 | ✅ Done · automated tests 0 errors 0 warnings (server 230, shared 228, admin 55, mobile 67, e2e 122) · KF hand test passed (run by Claude with screenshots; fixed: version names v15 instead of a date, cancel page shows the order's own refund rule) | 23 Nov 2026 |
 | E14-4 | ✅ Done · automated tests 0 errors 0 warnings (server 231, shared 231, admin 57, mobile 67, e2e 123 of 124; the E11-2 overtime test fails only after about 10 pm KL) · KF hand test passed | 23 Nov 2026 |
+| E15-3 | ✅ Done · automated tests 0 errors 0 warnings (server 237, shared 236, admin 59, mobile 70, e2e 127) · KF hand test passed (run by Claude with screenshots; fixed: funnel shows – instead of over 100%, test tools result easier to read) | 24 Nov 2026 |
+| E15-2 | ✅ Done (setup ready; servers go up when KF has the domain and AWS account) · automated tests 0 errors 0 warnings (server 237, shared 236, admin 59, mobile 70, e2e 127, hosting 14 checks) · KF hand test passed (run by Claude with screenshots, following the README; no fixes needed) · 24 Nov fix: the app no longer loads images from DCloud's server (mobile 71 tests) | 24 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -1125,3 +1129,23 @@ All business rules are decided. Only these remain:
 | R60-4 | Page | New "Action log" menu, newest first, 50 per page; filter by admin, kind of action and date; each row links to its item |
 | R60-5 | Who sees it | Only admins given the "Action log" page (KF yes, others not by default) |
 | R60-6 | Not here | Owner and caregiver actions stay in each order's record (E14-2); how long the log is kept is decided before launch |
+
+### Round 61 · 24 Nov 2026 · KF decision (E15-3 monitoring)
+| # | Question | Decision |
+|---|---|---|
+| R61-1 | Error tracking | Sentry in server, admin and mobile; off unless SENTRY_DSN is set; never sends phone numbers, addresses or IC numbers |
+| R61-2 | Health check | /api/health reports the database, Redis and the payment gateway; the uptime alert (UptimeRobot, alert within 5 min) is set up with hosting in E15-2 |
+| R61-3 | Money alerts | WhatsApp alert to the support number when a payment, refund or payout fails, or is still processing after 30 min; at most one alert per failure per hour |
+| R61-4 | Booking funnel | Our own count of home → setup → caregiver chosen → pay page → paid, by day; admin "Funnel" page shows the last 7 and 30 days |
+| R61-5 | Test tools | "Send a test error" and "Send a test money alert" buttons |
+| R61-6 | Not here | Real Sentry project, UptimeRobot account and live WhatsApp sender are set up before launch (E15-2, E15-5) |
+
+### Round 62 · 24 Nov 2026 · KF decision (E15-2 hosting in Malaysia)
+| # | Question | Decision |
+|---|---|---|
+| R62-1 | Where | One server in AWS Asia Pacific (Malaysia, Kuala Lumpur), so data stays in Malaysia; staging and production are two servers with the same setup |
+| R62-2 | How | Docker: server, PostgreSQL, Redis and a web server with automatic HTTPS; one command starts everything; the app and admin each have their own web address |
+| R62-3 | Backups | Database and uploaded photos backed up every day at 3 am KL, kept 14 days; a restore script; the restore is tested by the automated tests |
+| R62-4 | Staging | Uses the test gateway, test SMS and Test tools; Test tools are behind a password. Production refuses to start with any test service (opens after E15-1 and E15-5) |
+| R62-5 | KF tasks | Buy a domain, open an AWS account, set up UptimeRobot on /api/health (alert within 5 min); Claude gives step-by-step guides |
+| R62-6 | Not here | A copy of backups outside the server (AWS S3 in Malaysia) is switched on with the AWS account; scaling to more servers after the pilot |

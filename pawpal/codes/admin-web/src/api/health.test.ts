@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fetchHealth, healthLabel } from './health';
 
-const ok = { status: 'ok', database: 'up', redis: 'up', version: '0.1.0' } as const;
+const ok = { status: 'ok', database: 'up', redis: 'up', gateway: 'up', version: '0.1.0' } as const;
 
 describe('admin health', () => {
   it('reads the server health report', async () => {
@@ -16,7 +16,8 @@ describe('admin health', () => {
 
   it('labels each state', () => {
     expect(healthLabel(ok)).toBe('All systems OK');
-    expect(healthLabel({ ...ok, status: 'degraded', redis: 'down' })).toBe('Degraded (database up, Redis down)');
+    expect(healthLabel({ ...ok, status: 'degraded', redis: 'down' })).toBe('Degraded (database up, Redis down, payment gateway up)');
+    expect(healthLabel({ ...ok, status: 'degraded', gateway: 'down' })).toBe('Degraded (database up, Redis up, payment gateway down)');
     expect(healthLabel(null)).toBe('Server not reachable');
   });
 });

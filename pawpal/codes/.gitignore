@@ -5,3 +5,6 @@ coverage/
 .env
 *.log
 server/uploads/
+deploy/.env
+deploy/test.env
+deploy/test-compose.yml

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask, type ProblemReport, type AdminProblemRow, type AdminExceptionRow, type ExceptionDetail, type SubstituteCandidate, type SubstituteOffer, type SettleResult, type CaregiverIncome, type OrderSettlement, type MoneyItem, type MoneyDetail, type QueueCount, type AdminOrderPage, type AdminOrderDetail, type AdminOrderAddress, type RulesAdmin, ruleChangeText, tomorrowOf, type AdminExceptionRow as ExRow, type AdminCaseRow as CaseRow, type AdminProblemRow as ProbRow } from '@pawpal/shared';
+import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask, type ProblemReport, type AdminProblemRow, type AdminExceptionRow, type ExceptionDetail, type SubstituteCandidate, type SubstituteOffer, type SettleResult, type CaregiverIncome, type OrderSettlement, type MoneyItem, type MoneyDetail, type QueueCount, type AdminOrderPage, type AdminOrderDetail, type AdminOrderAddress, type RulesAdmin, ruleChangeText, tomorrowOf, SUPPORT_PLACEHOLDER, type FunnelReport, type TestAlertResult, type TestErrorResult, type AdminExceptionRow as ExRow, type AdminCaseRow as CaseRow, type AdminProblemRow as ProbRow } from '@pawpal/shared';
 import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,6 +15,7 @@ import { ExtraFeesService } from '../src/bookings/extra-fees.service';
 import { TrustService } from '../src/caregivers/trust.service';
 import { DbService } from '../src/db/db.service';
 import { RulesService } from '../src/rules/rules.service';
+import { MoneyAlertsService } from '../src/monitor/money-alerts.service';
 import { adminLogin } from './admin-helper';
 
 // Area Cheras: no browser test uses it, so these caregivers never show up there.
@@ -2315,5 +2316,86 @@ describe('E6-1 caregiver sees requests', () => {
       await http().get('/api/admin/rules').set(noPage.header).expect(403);
       await http().post('/api/admin/rules').set(noPage.header).send({}).expect(403);
     }, 60_000);
+  });
+  // E15-3 (round 61): money alerts, the booking funnel and the test tools.
+  describe('E15-3 monitoring', () => {
+    const alerts = () => app.get(MoneyAlertsService);
+    const alertRows = async (key: string) => (await db().query('SELECT occurrence, text, sent_to FROM money_alerts WHERE key = $1 ORDER BY id', [key])).rows;
+    const settled = async () => {
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      await http().post('/api/dev/order-finish').send({ number: order.number }).expect(200);
+      await http().post('/api/dev/order-settled').send({ number: order.number }).expect(200);
+      return { cg, order, base: `order-${order.id}-payout` };
+    };
+    const payId = async (ref: string) => Number((await db().query('SELECT id FROM payments WHERE ref = $1', [ref])).rows[0].id);
+    const fail = (paymentId: number) => http().post(`/api/mock-gateway/payments/${paymentId}/outcome`).send({ outcome: 'failure' }).expect(200);
+
+    it('a failed payout is alerted to support once, again only for a new failure after an hour (R61-3)', async () => {
+      const { order, base } = await settled();
+      const admin = await adminLogin(app, ['money']);
+      expect(await alerts().runDue()).not.toContain(base);
+      await fail(await payId(base));
+      expect(await alerts().runDue()).toContain(base);
+      const rows = await alertRows(base);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ occurrence: 'failed:1', sent_to: SUPPORT_PLACEHOLDER });
+      expect(rows[0].text).toContain(`${order.number} failed: Declined by bank (mock)`);
+      expect(rows[0].text).not.toMatch(/\+?60\d{8,}|Jalan/);
+      // The same failure is never sent twice.
+      expect(await alerts().runDue()).not.toContain(base);
+      // Sent again and failed again inside the hour: waits; after the hour it goes.
+      await http().post(`/api/admin/money/${base}/send-again`).set(admin.header).expect(200);
+      await fail(await payId(`${base}-r1`));
+      expect(await alerts().runDue()).not.toContain(base);
+      expect(await alerts().runDue(new Date(Date.now() + 61 * 60_000))).toContain(base);
+      expect((await alertRows(base)).map((r) => r.occurrence)).toEqual(['failed:1', 'failed:2']);
+    }, 30_000);
+
+    it('a payout processing for 30 minutes and a failed owner payment are alerted (R61-3)', async () => {
+      const { base } = await settled();
+      expect(await alerts().runDue()).not.toContain(base);
+      await db().query("UPDATE payments SET updated_at = now() - interval '31 minutes' WHERE ref = $1", [base]);
+      expect(await alerts().runDue()).toContain(base);
+      expect((await alertRows(base))[0].text).toContain('still processing after 31 min');
+
+      const cg = await caregiver();
+      const { order, paymentId } = await paidOrder(cg);
+      await fail(paymentId);
+      const ref = (await db().query('SELECT ref FROM payments WHERE id = $1', [paymentId])).rows[0].ref as string;
+      expect(await alerts().runDue()).toContain(ref);
+      expect((await alertRows(ref))[0].text).toMatch(new RegExp(`^PawPal money alert: Payment RM[\\d.]+ · Owner payment · ${order.number} failed`));
+    }, 30_000);
+
+    it('counts each step once per person and day, and paid orders; only admins with the page (R61-4)', async () => {
+      const admin = await adminLogin(app, ['funnel']);
+      const report = async (days?: number) => (await http().get('/api/admin/funnel').query(days ? { days } : {}).set(admin.header).expect(200)).body as FunnelReport;
+      const today = (r: FunnelReport) => r.byDay[r.byDay.length - 1].counts;
+      const before = today(await report());
+      const visitor = `test-${randomInt(1e9)}`;
+      for (const step of ['home', 'home', 'setup', 'caregiver', 'pay']) await http().post('/api/funnel').send({ step, visitor }).expect(200);
+      const cg = await caregiver();
+      const { paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      const r = await report();
+      expect(r).toMatchObject({ days: 7, to: klDate(new Date()) });
+      expect(r.byDay).toHaveLength(7);
+      expect(r.steps.map((s) => s.step)).toEqual(['home', 'setup', 'caregiver', 'pay', 'paid']);
+      const after = today(r);
+      expect([after.home - before.home, after.setup - before.setup, after.caregiver - before.caregiver, after.pay - before.pay, after.paid - before.paid]).toEqual([1, 1, 1, 1, 1]);
+      expect((await report(30)).byDay).toHaveLength(30);
+      expect((await http().post('/api/funnel').send({ step: 'paid', visitor }).expect(400)).body.code).toBe('BAD_STEP');
+      expect((await http().get('/api/admin/funnel').query({ days: 9 }).set(admin.header).expect(400)).body.code).toBe('BAD_DAYS');
+      await http().get('/api/admin/funnel').set((await adminLogin(app, ['money'])).header).expect(403);
+    }, 30_000);
+
+    it('test tools send a test error and a test money alert (R61-5)', async () => {
+      const e = (await http().post('/api/dev/monitor/test-error').expect(200)).body as TestErrorResult;
+      expect(e).toEqual({ sentry: false, eventId: null, message: 'Sentry is off (no SENTRY_DSN), so the error was only written to the server log.' });
+      const a = (await http().post('/api/dev/monitor/test-alert').expect(200)).body as TestAlertResult;
+      expect(a).toEqual({ sentTo: SUPPORT_PLACEHOLDER, text: 'PawPal money alert: Payout RM1 · Test alert from Test tools · TEST failed: This is only a test. Open Money in admin to fix it.' });
+    });
   });
 });

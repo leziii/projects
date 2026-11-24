@@ -1,0 +1,73 @@
+# E15-2 (round 62): PawPal on one server. Same file for staging and production; only deploy/.env differs.
+#   cd deploy && cp .env.example .env   (fill it in)
+#   docker compose up -d --build
+name: pawpal
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pawpal
+      POSTGRES_USER: pawpal
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD, pg_isready, -U, pawpal]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redis-data:/data]
+
+  server:
+    build: { context: .., target: server }
+    image: pawpal-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://pawpal:${DB_PASSWORD}@db:5432/pawpal
+      REDIS_URL: redis://redis:6379
+      UPLOAD_DIR: /data/uploads
+    volumes: [uploads:/data/uploads]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  web:
+    build: { context: .., target: web }
+    image: pawpal-web
+    restart: unless-stopped
+    env_file: .env
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy-data:/data, caddy-config:/config]
+    depends_on: [server]
+
+  # R62-3: database and photos every day at 3 am KL, kept 14 days.
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGUSER: pawpal
+      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: pawpal
+      TZ: Asia/Kuala_Lumpur
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - backups:/backups
+      - uploads:/data/uploads:ro
+    entrypoint: [sh, /backup.sh, loop]
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  db-data:
+  redis-data:
+  uploads:
+  caddy-data:
+  caddy-config:
+  backups:

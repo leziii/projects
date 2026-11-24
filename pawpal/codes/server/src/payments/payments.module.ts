@@ -17,6 +17,6 @@ function gatewayFactory(config: ConfigService): PaymentGateway {
 @Module({
   controllers: [PaymentsController, MockGatewayController],
   providers: [PaymentsService, { provide: PAYMENT_GATEWAY, useFactory: gatewayFactory, inject: [ConfigService] }],
-  exports: [PaymentsService],
+  exports: [PaymentsService, PAYMENT_GATEWAY],
 })
 export class PaymentsModule {}

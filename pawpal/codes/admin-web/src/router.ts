@@ -18,6 +18,7 @@ import Cases from './views/Cases.vue';
 import Exceptions from './views/Exceptions.vue';
 import ExceptionDetail from './views/ExceptionDetail.vue';
 import Reviews from './views/Reviews.vue';
+import Funnel from './views/Funnel.vue';
 import LocationFlags from './views/LocationFlags.vue';
 import TestTools from './views/TestTools.vue';
 import Money from './views/Money.vue';
@@ -59,6 +60,7 @@ export const router = createRouter({
     { path: '/money', name: 'money', component: Money, meta: { page: 'money' } },
     { path: '/money/:id', name: 'money-item', component: MoneyDetail, meta: { page: 'money' } },
     { path: '/actions', name: 'actions', component: ActionLog, meta: { page: 'actions' } },
+    { path: '/funnel', name: 'funnel', component: Funnel, meta: { page: 'funnel' } },
     { path: '/test-tools', name: 'test-tools', component: TestTools, meta: { page: 'test-tools' } },
   ],
 });

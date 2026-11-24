@@ -1,4 +1,4 @@
-import { CAREGIVER_STATUSES, DAY_END, DAY_START, SETTLEMENT_STATE_LABEL, formatRM, timeText, type SettleResult, type AlertLogRow, type BookedVisit, type AlertSent, type RequestAlert, type CaregiverStatus, type Message, type MessageCategory, type MessageLinkType, type Role, type User } from '@pawpal/shared';
+import { CAREGIVER_STATUSES, DAY_END, DAY_START, SETTLEMENT_STATE_LABEL, formatRM, timeText, type SettleResult, type TestAlertResult, type TestErrorResult, type AlertLogRow, type BookedVisit, type AlertSent, type RequestAlert, type CaregiverStatus, type Message, type MessageCategory, type MessageLinkType, type Role, type User } from '@pawpal/shared';
 import { api } from './payments';
 
 /** Stand-in for caregiver review until E4-2: set a caregiver's status by phone number. */
@@ -57,6 +57,10 @@ export const addTestVisit = (phone: string, date: string, start: number, minutes
 export const START_OPTIONS = Array.from({ length: (DAY_END - DAY_START) / 30 + 1 }, (_, i) => DAY_START + i * 30).map((value) => ({ value, label: timeText(value) }));
 
 /** E14-3: start the waiting rule version today. */
+/** E15-3 (R61-5): a test error from the server, and a test money alert to the support number. */
+export const sendTestError = (f?: typeof fetch) => api<TestErrorResult>('/dev/monitor/test-error', {}, f);
+export const sendTestMoneyAlert = (f?: typeof fetch) => api<TestAlertResult>('/dev/monitor/test-alert', {}, f);
+
 export const startRulesNow = (f?: typeof fetch) => api<{ version: string | null }>('/dev/rules/start-now', {}, f);
 
 /** E13-1 (R53-6): settle an order now instead of waiting for the 10-minute check. */

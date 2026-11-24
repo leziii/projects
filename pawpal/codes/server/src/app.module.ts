@@ -8,6 +8,7 @@ import { DevModule } from './dev/dev.module';
 import { HealthModule } from './health/health.module';
 import { HistoryModule } from './history/history.module';
 import { MessagesModule } from './messages/messages.module';
+import { MonitorModule } from './monitor/monitor.module';
 import { PaymentsModule } from './payments/payments.module';
 import { RedisModule } from './redis/redis.module';
 import { RulesModule } from './rules/rules.module';
@@ -23,6 +24,6 @@ import { ReferralsModule } from './referrals/referrals.module';
 import { CaregiversModule } from './caregivers/caregivers.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DbModule, RedisModule, SmsModule, FilesModule, HistoryModule, MessagesModule, AuthModule, AdminModule, AlertsModule, HealthModule, RulesModule, SupportModule, PetsModule, AddressesModule, CaregiversModule, PromosModule, ReferralsModule, BookingsModule, DashboardModule, PaymentsModule, DevModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DbModule, RedisModule, SmsModule, FilesModule, HistoryModule, MessagesModule, AuthModule, AdminModule, AlertsModule, HealthModule, RulesModule, SupportModule, PetsModule, AddressesModule, CaregiversModule, PromosModule, ReferralsModule, BookingsModule, DashboardModule, PaymentsModule, MonitorModule, DevModule],
 })
 export class AppModule {}

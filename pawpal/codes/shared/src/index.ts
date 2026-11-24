@@ -35,12 +35,14 @@ export * from './admin-orders';
 export * from './reviews';
 
 export const APP_NAME = 'PawPal';
-export const SHARED_VERSION = '0.62.0';
+export const SHARED_VERSION = '0.63.0';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
   database: 'up' | 'down';
   redis: 'up' | 'down';
+  /** E15-3 (R61-2): the payment gateway answers. */
+  gateway: 'up' | 'down';
   version: string;
 }
 export * from './test-card';
@@ -52,3 +54,4 @@ export * from './extra-fees';
 export * from './problems';
 export * from './rule-versions';
 export * from './action-log';
+export * from './monitoring';

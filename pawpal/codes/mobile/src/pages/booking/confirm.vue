@@ -91,6 +91,7 @@ import { applyPromo, getCheckout, payNow, removePromo, type Checkout } from '@/a
 import { ApiError } from '@/api/client';
 import { listPets } from '@/api/pets';
 import { currentRules } from '@/api/rules';
+import { trackStep } from '@/api/funnel';
 import { FIX_URL, lineText } from '@/booking';
 import { settleInputs } from '@/inputs';
 
@@ -113,6 +114,7 @@ const hint = computed(() => (problems.value.length ? 'Fix the points above to pa
 
 onShow(async () => {
   if (!(await requireUser('/pages/booking/confirm'))) return;
+  void trackStep('caregiver');
   await load();
 });
 

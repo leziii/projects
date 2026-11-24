@@ -11,5 +11,5 @@ export async function fetchHealth(fetcher: typeof fetch = fetch): Promise<Health
 
 export function healthLabel(h: HealthReport | null): string {
   if (!h) return 'Server not reachable';
-  return h.status === 'ok' ? 'All systems OK' : `Degraded (database ${h.database}, Redis ${h.redis})`;
+  return h.status === 'ok' ? 'All systems OK' : `Degraded (database ${h.database}, Redis ${h.redis}, payment gateway ${h.gateway})`;
 }
