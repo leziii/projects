@@ -1,5 +1,5 @@
 <template>
-  <view class="content">
+  <view class="content with-nav">
     <view class="filters">
       <text v-for="f in ORDER_FILTERS" :key="f.value" class="chip" :class="{ on: filter === f.value }" :data-test="`filter-${f.value}`" @click="choose(f.value)">{{ f.label }}</text>
     </view>
@@ -26,6 +26,7 @@
       </view>
       <text v-if="loadingMore" class="note center">Loading…</text>
     </template>
+    <BottomNav role="owner" active="orders" />
   </view>
 </template>
 
@@ -34,6 +35,7 @@ import { ref } from 'vue';
 import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app';
 import { ORDER_FILTERS, formatRM, orderLine, orderTag, type OrderFilter, type OrderListRow } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
+import BottomNav from '@/components/BottomNav.vue';
 import { getOrders } from '@/api/booking';
 
 const filter = ref<OrderFilter>('all');

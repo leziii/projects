@@ -1,10 +1,12 @@
 <template>
-  <view class="content">
+  <view class="content with-nav">
     <scroll-view scroll-x class="days">
       <view class="day-row">
         <view v-for="d in list?.days ?? []" :key="d.date" class="day" :class="{ on: d.date === list?.date }" :data-test="`day-${d.date}`" @click="choose(d.date)">
-          <text class="day-name">{{ dayLabel(d.date) }}</text>
+          <text class="day-top">{{ dayParts(d.date)[0] }}</text>
+          <text class="day-name">{{ dayParts(d.date)[1] }}</text>
           <text v-if="d.count" class="count" data-test="day-count">{{ d.count }}</text>
+          <text v-else class="count none">·</text>
         </view>
       </view>
     </scroll-view>
@@ -18,8 +20,13 @@
             <text class="strong" data-test="task-time">{{ taskTime(t) }}</text>
             <text class="tag" :class="t.status" data-test="task-status">{{ TASK_STATUS_LABEL[t.status] }}</text>
           </view>
-          <text class="line" data-test="task-area">{{ t.area }}</text>
-          <text class="note" data-test="task-pets">{{ taskPets(t) }}</text>
+          <view class="where">
+            <view class="task-icon"><PpIcon name="paw" :size="20" /></view>
+            <view class="where-text">
+              <text class="line" data-test="task-area">{{ t.area }}</text>
+              <text class="note" data-test="task-pets">{{ taskPets(t) }}</text>
+            </view>
+          </view>
           <view class="row">
             <text class="note" data-test="task-length">{{ t.minutes }} min · {{ t.number }}</text>
             <text v-if="t.status !== 'cancelled'" class="link">›</text>
@@ -28,6 +35,7 @@
       </template>
       <text v-if="!list.tasks.length" class="note center" data-test="no-tasks">No tasks on this day.</text>
     </template>
+    <BottomNav role="caregiver" active="tasks" />
   </view>
 </template>
 
@@ -37,6 +45,8 @@ import { onPullDownRefresh, onShow } from '@dcloudio/uni-app';
 import { TASK_STATUS_LABEL, dayText, klDate, taskGap, taskPets, taskTime, type Task, type TaskList } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { getTasks } from '@/api/requests';
+import BottomNav from '@/components/BottomNav.vue';
+import PpIcon from '@/components/PpIcon.vue';
 
 const list = ref<TaskList | null>(null);
 const error = ref('');
@@ -61,6 +71,11 @@ onPullDownRefresh(async () => {
 
 /** "Today" or "Wed 5 Nov" */
 const dayLabel = (date: string) => (date === klDate(new Date()) ? 'Today' : dayText(date));
+/** The day chip in two lines: "Wed" over "5 Nov" ("Today" over "5 Nov"). */
+const dayParts = (date: string) => {
+  const [name, ...rest] = dayText(date).split(' ');
+  return [dayLabel(date) === 'Today' ? 'Today' : name, rest.join(' ')];
+};
 
 function choose(date: string) {
   if (date !== list.value?.date) void load(date);
@@ -77,26 +92,34 @@ function open(t: Task) {
 </script>
 
 <style>
-.content { display: flex; flex-direction: column; padding: 32rpx; gap: 16rpx; }
+.content { display: flex; flex-direction: column; padding: 32rpx; gap: 20rpx; }
 .days { white-space: nowrap; }
-.day-row { display: flex; gap: 12rpx; }
-.day { display: flex; flex-direction: column; align-items: center; gap: 4rpx; min-width: 120rpx; padding: 12rpx 16rpx; border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); background: var(--pp-surface); }
-.day.on { background: var(--pp-primary-strong); border-color: var(--pp-primary-strong); color: var(--pp-surface); }
-.day-name { font-size: 24rpx; font-weight: 600; }
-.count { font-size: 22rpx; font-weight: 700; }
-.card { display: flex; flex-direction: column; gap: 6rpx; padding: 28rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
-.card.muted { opacity: 0.5; }
+.day-row { display: flex; gap: 14rpx; padding: 4rpx 0 8rpx; }
+.day { display: flex; flex-direction: column; align-items: center; gap: 2rpx; min-width: 112rpx; padding: 16rpx 12rpx; border-radius: 28rpx; background: var(--pp-surface); box-shadow: var(--pp-shadow); }
+.day.on { background: var(--pp-ink); color: var(--pp-surface); }
+.day-top { font-size: 22rpx; color: var(--pp-muted); }
+.day.on .day-top { color: var(--pp-primary-soft); }
+.day-name { font-size: 26rpx; font-weight: 700; }
+.count { font-size: 22rpx; font-weight: 800; color: var(--pp-primary-strong); }
+.day.on .count { color: var(--pp-primary); }
+.count.none { color: var(--pp-border); }
+.card { display: flex; flex-direction: column; gap: 16rpx; padding: 30rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
+uni-page-body .card.muted { opacity: 0.55; box-shadow: none; border: 2rpx dashed var(--pp-border); background: transparent; }
 .row { display: flex; justify-content: space-between; align-items: center; }
-.strong { font-weight: 600; font-size: 30rpx; }
-.line { font-size: 28rpx; }
+.strong { font-weight: 800; font-size: 32rpx; }
+.where { display: flex; align-items: center; gap: 20rpx; }
+.task-icon { width: 72rpx; height: 72rpx; border-radius: 22rpx; background: var(--pp-primary-soft); color: var(--pp-primary-strong); display: flex; align-items: center; justify-content: center; }
+.where-text { display: flex; flex-direction: column; flex: 1; }
+.line { font-size: 28rpx; font-weight: 700; }
 .note { font-size: 26rpx; color: var(--pp-muted); }
 .center { text-align: center; padding: 48rpx 0; }
-.tag { padding: 4rpx 16rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 600; background: var(--pp-background); color: var(--pp-primary-strong); }
-.tag.cancelled { color: var(--pp-danger); }
+.tag { padding: 6rpx 20rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 700; background: color-mix(in srgb, var(--pp-info) 12%, var(--pp-surface)); color: var(--pp-info); }
+.tag.cancelled, .tag.moved, .tag.closed { background: color-mix(in srgb, var(--pp-muted) 14%, var(--pp-surface)); color: var(--pp-muted); }
 .tag.disputed { background: var(--pp-danger); color: var(--pp-surface); }
-.tag.arrived, .tag.in_service, .tag.report_sent, .tag.confirmed { background: var(--pp-primary-strong); color: var(--pp-surface); }
-.link { color: var(--pp-primary-strong); font-weight: 600; }
-.gap { align-self: center; font-size: 24rpx; color: var(--pp-muted); }
-.gap.tight { color: var(--pp-danger); font-weight: 600; }
+.tag.arrived, .tag.in_service { background: var(--pp-primary); color: var(--pp-ink); }
+.tag.report_sent, .tag.confirmed { background: color-mix(in srgb, var(--pp-success) 14%, var(--pp-surface)); color: var(--pp-success); }
+.link { color: var(--pp-primary-strong); font-weight: 700; }
+.gap { align-self: center; font-size: 24rpx; font-weight: 600; color: var(--pp-muted); padding: 4rpx 24rpx; border-radius: 999rpx; background: var(--pp-surface); }
+.gap.tight { color: var(--pp-danger); }
 .error { color: var(--pp-danger); }
 </style>

@@ -8,9 +8,12 @@
     </view>
     <button class="ghost" data-test="owner-home" @click="ownerHome">Go to owner home</button>
   </view>
-  <view v-else-if="user" class="content">
+  <view v-else-if="user" class="content with-nav">
     <view class="head">
-      <text class="title">Caregiver dashboard</text>
+      <view class="head-text">
+        <text class="kicker">Caregiver mode</text>
+        <text class="title">Caregiver dashboard</text>
+      </view>
       <view class="links">
         <MessagesLink />
         <text class="link" data-test="account" @click="openMe">Me</text>
@@ -18,7 +21,7 @@
     </view>
     <view class="card" data-test="requests">
       <view class="row">
-        <text class="section" data-test="requests-title">Waiting for you ({{ list?.open.length ?? 0 }})</text>
+        <view class="section" data-test="requests-title"><view class="sec-icon"><PpIcon name="clock" :size="18" /></view><text>Waiting for you ({{ list?.open.length ?? 0 }})</text></view>
         <text class="link" data-test="see-all" @click="openAll">See all ›</text>
       </view>
       <view v-if="top" class="req" data-test="top-request" @click="openOne(top.orderId)">
@@ -33,19 +36,20 @@
     </view>
     <view class="card" data-test="tasks-card" @click="openTasks">
       <view class="row">
-        <text class="section">Today's tasks</text>
+        <view class="section"><view class="sec-icon"><PpIcon name="calendar" :size="18" /></view><text>Today's tasks</text></view>
         <text class="link">My tasks ›</text>
       </view>
       <text class="note" data-test="today-count">{{ todayCount ? `${todayCount} ${todayCount === 1 ? 'visit' : 'visits'} today` : 'No visits today.' }}</text>
     </view>
     <view class="card" data-test="income-card" @click="openIncome">
       <view class="row">
-        <text class="section">Income</text>
+        <view class="section"><view class="sec-icon"><PpIcon name="wallet" :size="18" /></view><text>Income</text></view>
         <text class="link">See income ›</text>
       </view>
       <text class="note">Pending, paying and paid, kept apart.</text>
     </view>
     <AlertsCard :user-phone="user.phone" />
+    <BottomNav role="caregiver" active="home" />
   </view>
 </template>
 
@@ -58,6 +62,8 @@ import { getHome, getPaused, getRequests } from '@/api/requests';
 import AlertsCard from '@/components/AlertsCard.vue';
 import HelpButton from '@/components/HelpButton.vue';
 import MessagesLink from '@/components/MessagesLink.vue';
+import BottomNav from '@/components/BottomNav.vue';
+import PpIcon from '@/components/PpIcon.vue';
 import { REQUESTS_URL, anyExpired, incomeText, leftText, requestUrl, tagText, visitsText, whereText } from '@/requests';
 
 const user = ref<User | null>(null);
@@ -131,17 +137,21 @@ function ownerHome() {
 <style>
 .content { padding: 32rpx; }
 .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8rpx; }
-.title { font-size: 44rpx; font-weight: 700; }
+.head-text { display: flex; flex-direction: column; }
+.kicker { font-size: 24rpx; color: var(--pp-muted); }
+.title { font-size: 40rpx; font-weight: 800; }
 .links { display: flex; gap: 28rpx; }
-.link { color: var(--pp-primary-strong); font-weight: 600; }
+.link { color: var(--pp-primary-strong); font-weight: 700; }
 .card { margin-top: 24rpx; padding: 32rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
-.section { display: block; font-weight: 600; }
+.section { display: flex; align-items: center; gap: 16rpx; font-weight: 700; }
+.sec-icon { width: 60rpx; height: 60rpx; border-radius: 18rpx; background: var(--pp-primary-soft); color: var(--pp-primary-strong); display: flex; align-items: center; justify-content: center; }
 .row { display: flex; justify-content: space-between; align-items: center; }
-.req { margin-top: 20rpx; padding: 20rpx; border: 1px solid var(--pp-border); border-radius: 16rpx; }
-.tag { padding: 4rpx 16rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 600; background: var(--pp-background); color: var(--pp-primary-strong); }
-.tag.urgent { background: var(--pp-danger); color: var(--pp-surface); }
-.left { font-weight: 600; font-size: 26rpx; }
-.line { display: block; margin-top: 10rpx; font-size: 28rpx; }
-.ghost { margin-top: 24rpx; color: var(--pp-primary-strong); background: var(--pp-surface); border: 1px solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); }
+.req { margin-top: 20rpx; padding: 24rpx; border-radius: 28rpx; background: var(--pp-primary); color: var(--pp-ink); }
+.req .note { color: var(--pp-ink); }
+.tag { padding: 6rpx 20rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 700; background: var(--pp-surface); color: var(--pp-primary-strong); }
+.tag.urgent { background: var(--pp-ink); color: var(--pp-primary); }
+.left { font-weight: 700; font-size: 26rpx; }
+.line { display: block; margin-top: 10rpx; font-size: 28rpx; font-weight: 600; }
+.ghost { margin-top: 24rpx; color: var(--pp-primary-strong); background: var(--pp-surface); border: 3rpx solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-weight: 700; }
 .note { display: block; font-size: 26rpx; color: var(--pp-muted); margin-top: 6rpx; }
 </style>

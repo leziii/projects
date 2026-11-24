@@ -1,5 +1,5 @@
 <template>
-  <view v-if="user" class="content">
+  <view v-if="user" class="content with-nav">
     <view class="card" data-test="me">
       <text class="label">Logged in as</text>
       <text class="phone" data-test="my-phone">{{ formatMyPhone(user.phone) }}</text>
@@ -29,6 +29,7 @@
     </view>
 
     <button class="ghost" data-test="logout" @click="signOut">Log out</button>
+    <BottomNav :role="user.activeRole" active="me" />
   </view>
 </template>
 
@@ -37,6 +38,7 @@ import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import { formatMyPhone, type User } from '@pawpal/shared';
 import { logout, requireUser } from '@/api/auth';
+import BottomNav from '@/components/BottomNav.vue';
 import { getApplication } from '@/api/apply';
 import { meApplicationRow } from '@/apply';
 import HelpButton from '@/components/HelpButton.vue';

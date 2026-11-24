@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { landingPath, menuFor, routeDecision } from './session';
+import { ADMIN_PAGES } from '@pawpal/shared';
+import { MENU_GROUPS, landingPath, menuFor, menuGroups, routeDecision } from './session';
 
 describe('admin session and page permissions', () => {
   const all = { pages: ['dashboard', 'caregivers', 'pets', 'rules', 'payments', 'test-tools'] as const };
@@ -24,5 +25,16 @@ describe('admin session and page permissions', () => {
     expect(landingPath(rulesOnly, 'https://evil.example')).toBe('/rules');
     expect(landingPath(rulesOnly, '/login')).toBe('/rules');
     expect(landingPath({ pages: [] }, undefined)).toBe('/no-access');
+  });
+});
+
+describe('menu sections', () => {
+  it('every admin page is in exactly one section', () => {
+    const pages = MENU_GROUPS.flatMap((g) => g.pages.map((p) => p.page));
+    expect([...pages].sort()).toEqual([...ADMIN_PAGES].sort());
+  });
+
+  it('shows only the pages this admin may open, without empty sections', () => {
+    expect(menuGroups({ pages: ['rules'] })).toEqual([{ title: 'Settings', items: [{ page: 'rules', path: '/rules', label: 'Rules', icon: 'sliders' }] }]);
   });
 });

@@ -17,7 +17,7 @@
         <text class="name">WhatsApp / SMS</text>
         <text class="state">To {{ phone }} · SMS if WhatsApp fails</text>
       </view>
-      <switch :checked="settings?.textAlerts ?? true" data-test="text-toggle" :disabled="busy || !settings" @change="toggleText" />
+      <switch color="var(--pp-primary-strong)" :checked="settings?.textAlerts ?? true" data-test="text-toggle" :disabled="busy || !settings" @change="toggleText" />
     </view>
 
     <button class="ghost" data-test="test-alert" :disabled="busy" @click="test">Send me a test alert</button>

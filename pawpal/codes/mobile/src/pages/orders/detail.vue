@@ -1,14 +1,17 @@
 <template>
   <view v-if="order" class="content">
-    <view class="card">
+    <view class="card head-card">
       <view class="row">
         <view class="copyable" data-test="copy-number" @click="copyText(order.number, 'Order number copied')">
-          <text class="strong" data-test="order-number">{{ order.number }}</text>
+          <text class="head-number" data-test="order-number">{{ order.number }}</text>
           <view class="copy-icon" aria-label="Copy" data-test="copy-icon"><view class="sheet back" /><view class="sheet front" /></view>
         </view>
-        <text class="tag" :class="result.tone" data-test="order-tag">{{ orderTag(order) }}</text>
+        <text class="tag head-tag" :class="result.tone" data-test="order-tag">{{ orderTag(order) }}</text>
       </view>
-      <text class="line" data-test="order-caregiver">Caregiver: {{ order.caregiver.displayName }}</text>
+      <view class="who">
+        <text class="avatar">{{ initials(order.caregiver.displayName) }}</text>
+        <text class="line" data-test="order-caregiver">Caregiver: {{ order.caregiver.displayName }}</text>
+      </view>
       <text class="note" data-test="order-status">{{ result.body }}</text>
       <text v-if="order.substituteOf" class="note" data-test="substitute-of">Substitute for order {{ order.substituteOf.number }} · paid on that order</text>
     </view>
@@ -90,6 +93,7 @@
 </template>
 
 <script setup lang="ts">
+
 import { computed, ref } from 'vue';
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app';
 import { extraFeeTitle, ENTRY_METHOD_LABEL, REQUEST_RULES, canCancelVisit, canRebook, cancelledText, formatRM, klAtText, orderTag, payResult, rateUntilText, refundLine, reportReadyText, visitStatus, visitWhen, type OrderDetail } from '@pawpal/shared';
@@ -190,27 +194,42 @@ async function rebook() {
   error.value = (await rebookWithConfirm(id)) ?? '';
   busy.value = false;
 }
+
+/** "Lim M." → "LM" for the round avatar. */
+const initials = (name: string) => name.split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
 </script>
 
 <style>
-.content { display: flex; flex-direction: column; padding: 32rpx; gap: 20rpx; }
-.card { display: flex; flex-direction: column; gap: 10rpx; padding: 28rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
+.content { display: flex; flex-direction: column; padding: 32rpx; gap: 24rpx; }
+.card { display: flex; flex-direction: column; gap: 12rpx; padding: 32rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
 .row { display: flex; justify-content: space-between; align-items: center; font-size: 28rpx; }
 .copyable { display: flex; gap: 16rpx; align-items: center; }
 .section { font-weight: 700; font-size: 30rpx; }
-.strong { font-weight: 600; }
+.strong { font-weight: 700; }
 .line { font-size: 28rpx; }
 .note { font-size: 26rpx; color: var(--pp-muted); }
-.visit { display: flex; flex-direction: column; gap: 4rpx; padding: 12rpx 0; border-bottom: 1px solid var(--pp-border); }
-.tag { padding: 4rpx 16rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 600; background: var(--pp-background); }
-.ok { color: var(--pp-primary-strong); }
+.head-card { background: var(--pp-ink); color: var(--pp-surface); gap: 20rpx; }
+.head-card .note { color: var(--pp-primary-soft); }
+.head-card .copy-icon .sheet { border-color: var(--pp-primary); background: var(--pp-ink); }
+.head-number { font-size: 26rpx; color: var(--pp-primary-soft); }
+.head-card .head-tag { background: var(--pp-primary); color: var(--pp-ink); }
+.head-card .head-tag.bad { background: var(--pp-danger); color: var(--pp-surface); }
+.who { display: flex; align-items: center; gap: 20rpx; }
+.who .line { font-size: 32rpx; font-weight: 700; }
+.avatar { width: 96rpx; height: 96rpx; border-radius: 50%; background: var(--pp-primary); color: var(--pp-ink); font-weight: 800; font-size: 32rpx; display: flex; align-items: center; justify-content: center; }
+.visit { display: flex; flex-direction: column; gap: 6rpx; padding: 20rpx 0; border-top: 1px solid var(--pp-border); }
+.tag { padding: 6rpx 20rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 700; white-space: nowrap; }
+.tag.ok { background: var(--pp-primary-soft); color: var(--pp-primary-strong); }
+.tag.wait { background: color-mix(in srgb, var(--pp-info) 12%, var(--pp-surface)); color: var(--pp-info); }
+.tag.bad { background: color-mix(in srgb, var(--pp-danger) 13%, var(--pp-surface)); color: var(--pp-danger); }
+.ok { color: var(--pp-success); }
 .wait { color: var(--pp-ink); }
 .bad { color: var(--pp-danger); }
-.link { color: var(--pp-primary-strong); font-weight: 600; font-size: 26rpx; }
+.link { color: var(--pp-primary-strong); font-weight: 700; font-size: 26rpx; }
 .error { color: var(--pp-danger); font-size: 26rpx; text-align: center; }
-.primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
-.primary.small { margin-top: 12rpx; font-size: 28rpx; }
+.primary { width: 100%; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 700; }
+.primary.small { margin-top: 12rpx; font-size: 28rpx; min-height: 80rpx; line-height: 80rpx; }
 .primary[disabled] { background: var(--pp-primary-strong) !important; color: var(--pp-surface) !important; opacity: 0.45; }
-.extra { border-color: var(--pp-accent); }
-.danger-ghost { width: 100%; background: var(--pp-surface); color: var(--pp-danger); border: 1px solid var(--pp-danger); border-radius: var(--pp-radius-button); }
+uni-page-body .extra { border: 3rpx solid var(--pp-accent); }
+.danger-ghost { width: 100%; background: var(--pp-surface); color: var(--pp-danger); border: 3rpx solid var(--pp-danger); border-radius: var(--pp-radius-button); font-weight: 700; }
 </style>

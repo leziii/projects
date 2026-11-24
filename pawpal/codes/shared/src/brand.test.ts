@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { BRAND, brandCssVars, contrastRatio, elementPlusVars, logoDataUrl, mixColor } from './brand';
 
-describe('brand: Trusted Teal', () => {
+describe('brand: Honey & Tan', () => {
   const c = BRAND.colors;
 
-  it('is option B chosen by KF', () => {
-    expect(c.primary).toBe('#1F9E89');
-    expect(BRAND.font).toMatch(/^'Poppins'/);
+  it('is Honey & Tan chosen by KF (24 Nov 2026)', () => {
+    expect(c.primary).toBe('#E8B65C');
+    expect(BRAND.font).toMatch(/^'Plus Jakarta Sans'/);
   });
 
   it('every colour is #RRGGBB', () => {
@@ -23,6 +23,9 @@ describe('brand: Trusted Teal', () => {
     expect(contrastRatio('#FFFFFF', c.danger)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio('#FFFFFF', c.success)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(c.ink, c.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(c.ink, c.primary)).toBeGreaterThanOrEqual(4.5); // text on honey banners
+    expect(contrastRatio(c.primaryStrong, c.primarySoft)).toBeGreaterThanOrEqual(4.5); // icons and selected items
+    expect(contrastRatio('#FFFFFF', c.info)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('measures contrast correctly', () => {
@@ -39,11 +42,11 @@ describe('brand: Trusted Teal', () => {
 
   it('gives CSS variables for the apps', () => {
     const vars = brandCssVars();
-    expect(vars['--pp-primary']).toBe('#1F9E89');
-    expect(vars['--pp-primary-strong']).toBe('#147A69');
-    expect(vars['--pp-background']).toBe('#EEF8F6');
+    expect(vars['--pp-primary']).toBe('#E8B65C');
+    expect(vars['--pp-primary-strong']).toBe('#8A5A22');
+    expect(vars['--pp-background']).toBe('#FBF6EE');
     expect(vars['--pp-radius-button']).toBe('999px');
-    expect(Object.keys(vars)).toHaveLength(Object.keys(c).length + 3);
+    expect(Object.keys(vars)).toHaveLength(Object.keys(c).length + 4);
   });
 
   it('themes Element Plus with readable buttons', () => {
@@ -64,15 +67,15 @@ describe('installable app (PWA)', () => {
   it('manifest has what Android and iPhone need to install', async () => {
     const { webManifest } = await import('./brand');
     const m = webManifest();
-    expect(m).toMatchObject({ name: 'PawPal', start_url: '/', display: 'standalone', theme_color: '#1F9E89', background_color: '#EEF8F6' });
+    expect(m).toMatchObject({ name: 'PawPal', start_url: '/', display: 'standalone', theme_color: '#E8B65C', background_color: '#FBF6EE' });
     expect(m.icons.map((i) => `${i.sizes} ${i.purpose}`)).toEqual(['192x192 any', '512x512 any', '512x512 maskable']);
   });
 
   it('head tags set the theme colour and load the font', async () => {
     const { headTags } = await import('./brand');
     const tags = headTags();
-    expect(tags).toContain('<meta name="theme-color" content="#1F9E89">');
+    expect(tags).toContain('<meta name="theme-color" content="#E8B65C">');
     expect(tags).toContain('apple-mobile-web-app-capable');
-    expect(tags).toContain('family=Poppins');
+    expect(tags).toContain('family=Plus+Jakarta+Sans');
   });
 });

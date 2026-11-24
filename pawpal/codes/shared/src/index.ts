@@ -5,6 +5,7 @@ export * from './rules';
 export * from './payments';
 export * from './history';
 export * from './brand';
+export * from './icons';
 export * from './auth';
 export * from './roles';
 export * from './messages';

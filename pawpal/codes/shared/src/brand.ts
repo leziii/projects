@@ -1,11 +1,13 @@
 /**
  * PawPal brand (E1-5): the only place colours, font and logo are defined.
- * KF chose option B "Trusted Teal" (25 Oct 2026). Apps read these tokens; no colour is hard-coded elsewhere.
+ * KF chose "Honey & Tan" (24 Nov 2026), replacing "Trusted Teal". Apps read these tokens; no colour is hard-coded elsewhere.
  */
 
 export interface BrandColors {
-  /** Logo, highlights, large shapes. */
+  /** Logo, highlights, large shapes (dark text on it). */
   primary: string;
+  /** Soft tint of primary: icon tiles, selected items, info boxes. */
+  primarySoft: string;
   /** Buttons, links and text on light backgrounds (readable: contrast ≥ 4.5). */
   primaryStrong: string;
   /** Page background. */
@@ -22,6 +24,8 @@ export interface BrandColors {
   accent: string;
   success: string;
   danger: string;
+  /** "Upcoming" and other neutral status tags. */
+  info: string;
 }
 
 export interface Brand {
@@ -32,6 +36,8 @@ export interface Brand {
   font: string;
   fontUrl: string;
   radius: { card: number; button: number };
+  /** Soft shadow under cards and bars. */
+  shadow: string;
   /** Square logo mark, 64×64 viewBox. Also the app icon. */
   logoSvg: string;
 }
@@ -40,25 +46,28 @@ export const BRAND: Brand = {
   name: 'PawPal',
   tagline: 'Home pet care · Kuala Lumpur',
   colors: {
-    primary: '#1F9E89',
-    primaryStrong: '#147A69',
-    background: '#EEF8F6',
+    primary: '#E8B65C',
+    primarySoft: '#F6E7C8',
+    primaryStrong: '#8A5A22',
+    background: '#FBF6EE',
     surface: '#FFFFFF',
-    ink: '#14324A',
-    muted: '#5B6B78',
-    border: '#D6ECE8',
-    accent: '#F5A623',
-    success: '#1E8449',
-    danger: '#C8423B',
+    ink: '#2E2218',
+    muted: '#7A6550',
+    border: '#EADFCC',
+    accent: '#F4A261',
+    success: '#3D7A4A',
+    danger: '#B4443A',
+    info: '#2F5C8F',
   },
-  font: "'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif",
-  fontUrl: 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap',
-  radius: { card: 14, button: 999 },
+  font: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  fontUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
+  radius: { card: 20, button: 999 },
+  shadow: '0 1px 2px rgba(80, 55, 20, 0.06), 0 6px 20px rgba(80, 55, 20, 0.06)',
   logoSvg:
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#1F9E89"/>' +
-    '<path d="M12 32 32 15l20 17v18H12z" fill="#FFFFFF"/><circle cx="32" cy="40" r="5" fill="#1F9E89"/>' +
-    '<circle cx="25" cy="32" r="2.6" fill="#1F9E89"/><circle cx="30" cy="28" r="2.6" fill="#1F9E89"/>' +
-    '<circle cx="35" cy="28" r="2.6" fill="#1F9E89"/><circle cx="40" cy="32" r="2.6" fill="#1F9E89"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#E8B65C"/>' +
+    '<path d="M12 32 32 15l20 17v18H12z" fill="#FFFFFF"/><circle cx="32" cy="40" r="5" fill="#8A5A22"/>' +
+    '<circle cx="25" cy="32" r="2.6" fill="#8A5A22"/><circle cx="30" cy="28" r="2.6" fill="#8A5A22"/>' +
+    '<circle cx="35" cy="28" r="2.6" fill="#8A5A22"/><circle cx="40" cy="32" r="2.6" fill="#8A5A22"/></svg>',
 };
 
 /** WCAG contrast ratio between two #RRGGBB colours (1 to 21). */
@@ -80,6 +89,7 @@ export function brandCssVars(brand: Brand = BRAND): Record<string, string> {
   vars['--pp-font'] = brand.font;
   vars['--pp-radius-card'] = `${brand.radius.card}px`;
   vars['--pp-radius-button'] = `${brand.radius.button}px`;
+  vars['--pp-shadow'] = brand.shadow;
   return vars;
 }
 

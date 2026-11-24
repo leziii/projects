@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { BRAND } from '../../shared/src/brand';
 import { ADMIN, MOBILE, adminSession } from './helpers';
 
-// E1-5: one brand everywhere (Trusted Teal) and an installable mobile app.
+// E1-5: one brand everywhere (Honey & Tan) and an installable mobile app.
 const root = join(__dirname, '..', '..');
 
-/** "#147A69" → "rgb(20, 122, 105)", as the browser reports colours. */
+/** "#8A5A22" → "rgb(138, 90, 34)", as the browser reports colours. */
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 const pngSize = (buf: Buffer) => [buf.readUInt32BE(16), buf.readUInt32BE(20)];
 
@@ -105,5 +105,5 @@ test('admin console uses the brand', async ({ page, request }) => {
   await expect(page.locator('[data-test=brand] img')).toBeVisible();
   await expect(page.locator('meta[name=theme-color]')).toHaveAttribute('content', BRAND.colors.primary);
   await expect(page.locator('[data-test=new-charge]')).toHaveCSS('background-color', rgb(BRAND.colors.primaryStrong));
-  await expect(page.locator('body')).toHaveCSS('font-family', /Poppins/);
+  await expect(page.locator('body')).toHaveCSS('font-family', /Plus Jakarta Sans/);
 });

@@ -1,5 +1,5 @@
 <template>
-  <view v-if="user" class="content">
+  <view v-if="user" class="content with-nav">
     <view class="tabs">
       <text v-for="t in MESSAGE_TABS" :key="t.key" class="tab" :class="{ on: tab === t.key }" :data-test="`tab-${t.key || 'all'}`" @click="pick(t.key)">
         {{ t.label }}
@@ -25,6 +25,7 @@
     <text v-if="loaded && !items.length" class="empty" data-test="empty">No messages yet.</text>
     <text v-if="error" class="error" data-test="error">{{ error }}</text>
     <text class="note">Messages are reminders only. Opening one always shows the latest status.</text>
+    <BottomNav :role="user.activeRole" active="messages" />
   </view>
 </template>
 
@@ -33,6 +34,7 @@ import { ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import type { Message, MessageCategory, User } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
+import BottomNav from '@/components/BottomNav.vue';
 import { listMessages, readAllMessages } from '@/api/messages';
 import { MESSAGE_TABS, actionLabel, messageUrl, roleTag, timeAgo } from '@/messages';
 

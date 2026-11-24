@@ -1,13 +1,18 @@
 <template>
   <router-view v-if="$route.meta.public" />
   <el-container v-else style="min-height: 100vh">
-    <el-aside width="180px" class="side">
+    <el-aside width="232px" class="side">
       <div class="brand" data-test="brand">
         <img :src="logo" alt="" width="36" height="36">
-        <span>{{ BRAND.name }} <small>Admin</small></span>
+        <span class="brand-text">{{ BRAND.name }} <small>Admin</small></span>
       </div>
       <el-menu router :default-active="$route.path" data-test="menu">
-        <el-menu-item v-for="m in menu" :key="m.page" :index="m.path" :data-test="`menu-${m.page}`">{{ m.label }}</el-menu-item>
+        <el-menu-item-group v-for="g in groups" :key="g.title" :title="g.title">
+          <el-menu-item v-for="m in g.items" :key="m.page" :index="m.path" :data-test="`menu-${m.page}`">
+            <PpIcon :name="m.icon" class="menu-icon" />
+            <span>{{ m.label }}</span>
+          </el-menu-item>
+        </el-menu-item-group>
       </el-menu>
       <div v-if="admin" class="who">
         <span data-test="admin-name">{{ admin.name }}</span>
@@ -25,13 +30,14 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { BRAND, logoDataUrl, type AdminUser } from '@pawpal/shared';
 import { adminLogout, currentAdmin } from './api/admin';
-import { menuFor } from './session';
+import { menuGroups } from './session';
+import PpIcon from './components/PpIcon.vue';
 
 const logo = logoDataUrl();
 const route = useRoute();
 const router = useRouter();
 const admin = ref<AdminUser | null>(null);
-const menu = computed(() => (admin.value ? menuFor(admin.value) : []));
+const groups = computed(() => (admin.value ? menuGroups(admin.value) : []));
 
 // The router has already checked the login; read who it is for the menu.
 watch(
@@ -50,10 +56,19 @@ async function logout() {
 
 <style>
 /* Brand values come from shared/src/brand.ts as --pp-* variables (set in applyBrand). */
-body { margin: 0; font-family: var(--pp-font); color: var(--pp-ink); }
-.side { background: var(--pp-background); padding: 0 16px; display: flex; flex-direction: column; }
-.brand { display: flex; align-items: center; gap: 10px; margin: 18px 0; font-size: 20px; font-weight: 700; }
+body { margin: 0; font-family: var(--pp-font); color: var(--pp-ink); background: var(--pp-background); }
+.side { background: var(--pp-surface); border-right: 1px solid var(--pp-border); padding: 0 12px; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 10px; margin: 20px 8px 12px; }
+.brand-text { display: flex; flex-direction: column; font-size: 18px; font-weight: 800; line-height: 1.15; }
 .brand small { font-size: 12px; font-weight: 600; color: var(--pp-muted); }
 .side .el-menu { background: transparent; border: 0; flex: 1; }
-.who { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 0; border-top: 1px solid var(--pp-border); font-size: 13px; }
+.side .el-menu-item-group__title { padding: 14px 0 4px 12px !important; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pp-muted); }
+.side .el-menu-item { height: 40px; line-height: 40px; margin: 1px 0; padding: 0 12px !important; border-radius: 10px; font-weight: 500; color: var(--pp-ink); }
+.side .el-menu-item:hover { background: var(--pp-background); }
+.side .el-menu-item.is-active { background: var(--pp-primary-soft); color: var(--pp-ink); font-weight: 700; }
+.side .el-menu-item.is-active .menu-icon { color: var(--pp-primary-strong); }
+.menu-icon { margin-right: 10px; color: var(--pp-muted); flex-shrink: 0; }
+.el-main { padding: 28px 32px; }
+.el-card { border-radius: 16px; border-color: var(--pp-border); }
+.who { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 8px; border-top: 1px solid var(--pp-border); font-size: 13px; }
 </style>
