@@ -121,7 +121,7 @@ export function expectedSettlement(visits: SettleVisit[], fees: SettleFee[], r: 
 export const expectedIncome = (visits: SettleVisit[], fees: SettleFee[], r: RuleSet = DEFAULT_RULES): number => expectedSettlement(visits, fees, r).caregiverSen;
 
 /** R55-3: "RM40 × 85% = RM34", "RM10 (100%)", "no income". */
-export function lineMath(l: Pick<SettlementLine, 'kind' | 'grossSen' | 'caregiverSen'>, r: RuleSet = DEFAULT_RULES): string {
+export function lineMath(l: Pick<SettlementLine, 'kind' | 'grossSen' | 'caregiverSen'>, r: Pick<RuleSet, 'split'> = DEFAULT_RULES): string {
   if (l.caregiverSen === 0) return 'no income';
   if (l.kind === 'waiting') return `${formatRM(l.grossSen)} (${r.split.caregiverWaitingPercent}%)`;
   const pct = l.kind === 'no_handover' ? r.split.noHandoverCaregiverPercent : r.split.caregiverServicePercent;
@@ -146,6 +146,8 @@ export interface OrderSettlement {
   refunds: { key: string; reason: string; amountSen: number; done: boolean }[];
   problems: { index: number; by: 'caregiver' | 'owner'; kind: string; status: string }[];
   payout: { amountSen: number; state: 'paying' | 'paid' | 'failed'; at: string } | null;
+  /** E14-3: the split of the order's rule version, for lineMath. */
+  split: RuleSet['split'];
 }
 
 /** R55-2: the status line at the top of S16. `at` is the KL date the payout landed. */

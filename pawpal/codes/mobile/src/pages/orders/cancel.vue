@@ -28,7 +28,7 @@
     <view class="card">
       <view class="row"><text class="section">Refund</text><text class="section" data-test="cancel-total">{{ formatRM(total.refund) }}</text></view>
       <text class="note" data-test="refund-split">{{ refundSplitText(total.refund, total.credit) }}</text>
-      <text class="note">Worked out from when you tap the button: 24 h or more before a visit 100%, 1 to 24 h 80%, under 1 h nothing. If a line passes first, we show the new amount and ask again.</text>
+      <text class="note" data-test="cancel-rule">Worked out from when you tap the button: {{ preview.policy.join('; ') }}. If a line passes first, we show the new amount and ask again.</text>
     </view>
 
     <text v-if="changed" class="warn" data-test="amount-changed">{{ changed }}</text>

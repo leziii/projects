@@ -1,9 +1,9 @@
-import { DEFAULT_RULES, dayText, formatRM, timeText, type BookingDraft, type BookingVisit, type DraftInput, type PayProblem, type PetKind, type ServiceLevel } from '@pawpal/shared';
+import { DEFAULT_RULES, dayText, formatRM, timeText, type BookingDraft, type BookingVisit, type DraftInput, type PayProblem, type PetKind, type RuleSet, type ServiceLevel } from '@pawpal/shared';
 
 /** The level choice (R18-1): none for cats only; minimum time depends on dogs only or mixed. */
-export function levelOptions(kinds: PetKind[]): { value: ServiceLevel; label: string }[] {
+export function levelOptions(kinds: PetKind[], r: RuleSet = DEFAULT_RULES): { value: ServiceLevel; label: string }[] {
   if (!kinds.includes('dog')) return [];
-  const m = DEFAULT_RULES.minMinutes;
+  const m = r.minMinutes;
   const mixed = kinds.includes('cat');
   return [
     { value: 'basic', label: `Basic · ≥${mixed ? m.mixedBasic : m.dogBasic} min` },

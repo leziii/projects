@@ -30,6 +30,7 @@ import {
   type PetKind,
   type PayProblem,
   type PetStatus,
+  type RuleSet,
   type ServiceLevel,
   type User,
 } from '@pawpal/shared';
@@ -40,6 +41,7 @@ import { SecretBox } from '../files/secret-box';
 import { HistoryService } from '../history/history.service';
 import { PromosService } from '../promos/promos.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { RulesService } from '../rules/rules.service';
 
 interface DraftRow {
   pet_ids: string[];
@@ -79,7 +81,7 @@ interface OrderCopy {
   entry_secret: string | null;
 }
 
-type Context = DraftContext & { ownerId: number; defaultAddressId: number | null; areas: Map<number, Area> };
+type Context = DraftContext & { ownerId: number; defaultAddressId: number | null; areas: Map<number, Area>; rules: RuleSet };
 
 export interface CaregiverList {
   options: CaregiverOption[];
@@ -97,6 +99,7 @@ export class BookingsService {
     private readonly history: HistoryService,
     private readonly promos: PromosService,
     private readonly referrals: ReferralsService,
+    private readonly rules: RulesService,
   ) {}
 
   /** The saved draft, or a new one; with no address chosen yet, the default address is filled in. */
@@ -257,7 +260,7 @@ export class BookingsService {
   /** Caregivers who fit the booking (all, or one), with how the visits look for each. */
   private async options(d: DraftInput, ctx: Context, only?: number): Promise<CaregiverOption[]> {
     const needs = bookingNeeds(d, ctx, ctx.areas.get(d.addressId!)!);
-    const minutes = summarizeDraft(d, ctx).lines[0].quote.totalMinutes;
+    const minutes = summarizeDraft(d, ctx, ctx.rules).lines[0].quote.totalMinutes;
     const fit = (await this.trust.approvedCards(only === undefined ? undefined : [only])).filter((c) => c.id !== ctx.ownerId && fitsBooking(c, needs));
     const schedules = await this.schedules.forBookingMany(fit.map((c) => c.id));
     return fit.map((c) => {
@@ -269,7 +272,7 @@ export class BookingsService {
   }
 
   private async stillFits(d: DraftInput, ctx: Context, caregiverId: number): Promise<boolean> {
-    if (summarizeDraft(d, ctx).blocks.length) return true; // checked again once the setup is complete
+    if (summarizeDraft(d, ctx, ctx.rules).blocks.length) return true; // checked again once the setup is complete
     const [o] = await this.options(d, ctx, caregiverId);
     return !!o?.free;
   }
@@ -283,10 +286,10 @@ export class BookingsService {
   }
 
   /** Pets deleted or rejected since the draft was saved simply drop out. */
-  private async view(d: DraftInput, ctx: DraftContext, caregiverId: number | null, note: string | null, entry: EntryInfo | null): Promise<Omit<BookingDraft, 'promoCode'>> {
+  private async view(d: DraftInput, ctx: Context, caregiverId: number | null, note: string | null, entry: EntryInfo | null): Promise<Omit<BookingDraft, 'promoCode'>> {
     const clean = this.clean(d, ctx);
     const card = caregiverId === null ? null : await this.trust.card(caregiverId).catch(() => null);
-    return { ...clean, summary: summarizeDraft(clean, ctx), caregiver: card ? { id: card.id, displayName: card.displayName } : null, caregiverNote: note, entry };
+    return { ...clean, summary: summarizeDraft(clean, ctx, ctx.rules), caregiver: card ? { id: card.id, displayName: card.displayName } : null, caregiverNote: note, entry };
   }
 
   private async entry(row: DraftRow): Promise<EntryInfo | null> {
@@ -313,6 +316,7 @@ export class BookingsService {
       areas: new Map(addresses.rows.map((a) => [Number(a.id), a.area])),
       defaultAddressId: Number(addresses.rows.find((a) => a.is_default)?.id ?? 0) || null,
       now: new Date(),
+      rules: await this.rules.current(),
     };
   }
 }

@@ -60,6 +60,8 @@ export interface DraftSummary {
   blocks: string[];
   /** Names of chosen pets still being checked; payment waits for them (R18-5). */
   waitsForCheck: string[];
+  /** E14-3: the rule version these prices come from; the order keeps it (R59-4). */
+  rulesVersion: string;
 }
 
 export interface BookingDraft extends DraftInput {
@@ -158,6 +160,7 @@ export function summarizeDraft(d: DraftInput, ctx: DraftContext, r: RuleSet = DE
     total: lines.reduce((sum, l) => sum + l.quote.total, 0),
     blocks,
     waitsForCheck: pets.filter((p) => p.status === 'pending' || p.status === 'needs_info').map((p) => p.name),
+    rulesVersion: r.version,
   };
 }
 

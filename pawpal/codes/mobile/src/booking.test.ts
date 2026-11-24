@@ -26,7 +26,7 @@ describe('booking setup page (E5-1)', () => {
     expect(lineText(quoteVisit(['dog', 'cat'], 'basic', 1))).toBe('Dog + cats RM70 + overtime RM10 = RM80 · 60 min');
     expect(lineText(quoteVisit(['dog', 'dog'], 'upgrade'))).toBe('Dog RM70 + extra pet RM10 = RM80 · 60 min');
     expect(lineText(quoteVisit(['cat'], 'basic'))).toBe('Cat RM40 = RM40 · 30 min');
-    const d = { petIds: [1], level: 'basic', overtimeUnits: 0, addressId: 2, visits: [], summary: { lines: [], total: 0, blocks: ['Add at least one visit'], waitsForCheck: [] }, caregiver: null, caregiverNote: null, entry: null, promoCode: null } as BookingDraft;
+    const d = { petIds: [1], level: 'basic', overtimeUnits: 0, addressId: 2, visits: [], summary: { lines: [], total: 0, blocks: ['Add at least one visit'], waitsForCheck: [], rulesVersion: '2026-10-24' }, caregiver: null, caregiverNote: null, entry: null, promoCode: null } as BookingDraft;
     expect(nextHint(d)).toBe('Add at least one visit');
     expect(nextHint({ ...d, summary: { ...d.summary, blocks: [] } })).toBe('Ready. Choose a caregiver next.');
     expect(nextHint({ ...d, summary: { ...d.summary, blocks: [] }, caregiver: { id: 3, displayName: 'Siti A.' } })).toBe('Caregiver chosen. Next: tell them how to get in.');

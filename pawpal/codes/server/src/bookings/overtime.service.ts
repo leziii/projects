@@ -5,6 +5,7 @@ import { DbService } from '../db/db.service';
 import { HistoryService } from '../history/history.service';
 import { MessagesService } from '../messages/messages.service';
 import { RequestsService } from './requests.service';
+import { RulesService } from '../rules/rules.service';
 
 /** E11-2 S11 → S14 (round 46): the caregiver asks for overtime while in service; the owner approves and pays in E11-3. */
 @Injectable()
@@ -15,6 +16,7 @@ export class OvertimeService {
     private readonly schedules: ScheduleService,
     private readonly history: HistoryService,
     private readonly messages: MessagesService,
+    private readonly rules: RulesService,
   ) {}
 
   /** R46-2, R46-3: the units she can ask for, each with the schedule check. */
@@ -36,16 +38,16 @@ export class OvertimeService {
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query(
         "INSERT INTO extra_fees (order_id, idx, kind, units, amount_sen, status) VALUES ($1, $2, 'overtime', $3, $4, 'requested') ON CONFLICT DO NOTHING",
-        [orderId, index, units, units * OVERTIME_RULES.unitSen],
+        [orderId, index, units, units * before.unitSen],
       );
       if (!rowCount) throw new ConflictException({ code: 'OVERTIME_OPEN', message: 'You already asked for overtime on this visit; withdraw it first' });
-      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: 'in_service', actor: { type: 'caregiver', id: String(user.id) }, reason: `Overtime asked for visit ${index + 1}: ${overtimeText(units)}` });
+      await this.history.record(client, { entity: 'visit', entityId: orderId, from: 'in_service', to: 'in_service', actor: { type: 'caregiver', id: String(user.id) }, reason: `Overtime asked for visit ${index + 1}: ${overtimeText(units, before.unitSen)}` });
       const owner = await this.owner(client, orderId);
       await this.messages.send(client, {
         userId: owner.id,
         role: 'owner',
         category: 'order',
-        title: `Overtime asked: ${overtimeText(units)}`,
+        title: `Overtime asked: ${overtimeText(units, before.unitSen)}`,
         body: `${owner.caregiver} asks to stay ${units * OVERTIME_RULES.unitMin} min longer on the visit at ${taskTime(v)}. Until you approve and pay, only the booked service is done.`,
         link: { type: 'order', id: orderId },
       });
@@ -57,8 +59,8 @@ export class OvertimeService {
   async withdraw(user: User, orderId: number, index: number, now = new Date()): Promise<OvertimeInfo> {
     const v = await this.requests.visit(user, orderId, index, now);
     await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ units: number }>(
-        "UPDATE extra_fees SET status = 'withdrawn', updated_at = now() WHERE order_id = $1 AND idx = $2 AND kind = 'overtime' AND status = 'requested' RETURNING units",
+      const { rows } = await client.query<{ units: number; amount_sen: number }>(
+        "UPDATE extra_fees SET status = 'withdrawn', updated_at = now() WHERE order_id = $1 AND idx = $2 AND kind = 'overtime' AND status = 'requested' RETURNING units, amount_sen",
         [orderId, index],
       );
       if (!rows[0]) {
@@ -73,7 +75,7 @@ export class OvertimeService {
         role: 'owner',
         category: 'order',
         title: 'Overtime request withdrawn',
-        body: `${owner.caregiver} no longer asks for ${overtimeText(rows[0].units)} on the visit at ${taskTime(v)}. Nothing to pay.`,
+        body: `${owner.caregiver} no longer asks for ${overtimeText(rows[0].units, rows[0].amount_sen / rows[0].units)} on the visit at ${taskTime(v)}. Nothing to pay.`,
         link: { type: 'order', id: orderId },
       });
     });
@@ -103,6 +105,7 @@ export class OvertimeService {
       endMin,
       choices: Array.from({ length: max }, (_, i) => overtimeCheck(v.date, endMin, i + 1, s, selfId)),
       open: v.overtime,
+      unitSen: (await this.rules.forOrder(v.orderId)).price.overtimePer15,
     };
   }
 

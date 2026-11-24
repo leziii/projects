@@ -2,6 +2,8 @@
  * Database migrations (PostgreSQL), applied in order at server start, each in one transaction.
  * Never edit an applied one: add a new one.
  */
+import { DEFAULT_RULES } from '@pawpal/shared';
+
 export interface Migration {
   id: string;
   sql: string[];
@@ -846,6 +848,47 @@ export const MIGRATIONS: Migration[] = [
     sql: [
       // E13-4 (round 56): the Money page; admins who could see Payments can see it.
       "UPDATE admins SET pages = array_append(pages, 'money') WHERE 'payments' = ANY (pages) AND NOT ('money' = ANY (pages))",
+    ],
+  },
+  {
+    id: '044_admin_orders',
+    sql: [
+      // E14-2 (round 58): the Orders page, for admins who handle cases or exceptions.
+      "UPDATE admins SET pages = array_append(pages, 'orders') WHERE ('cases' = ANY (pages) OR 'exceptions' = ANY (pages)) AND NOT ('orders' = ANY (pages))",
+    ],
+  },
+  {
+    id: '045_rule_versions',
+    sql: [
+      // E14-3 (round 59): every rule version; an order keeps the one it was paid under (orders.rules_version).
+      `CREATE TABLE rule_versions (
+        id SERIAL PRIMARY KEY,
+        version VARCHAR(20) NOT NULL UNIQUE,
+        effective_from DATE NOT NULL,
+        rules JSONB NOT NULL,
+        reason TEXT NOT NULL,
+        admin VARCHAR(64) NULL,
+        created_at TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+        withdrawn_at TIMESTAMPTZ(3) NULL,
+        withdraw_reason TEXT NULL
+      )`,
+      'CREATE INDEX idx_rule_versions_from ON rule_versions (effective_from, id) WHERE withdrawn_at IS NULL',
+      `INSERT INTO rule_versions (version, effective_from, rules, reason) VALUES ('${DEFAULT_RULES.version}', '${DEFAULT_RULES.version}', '${JSON.stringify(DEFAULT_RULES)}', 'Initial version')`,
+    ],
+  },
+  {
+    id: '046_action_log',
+    sql: [
+      // E14-4 (round 60): admins with every other page get the Action log page (R60-5).
+      "UPDATE admins SET pages = array_append(pages, 'actions') WHERE pages @> ARRAY['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money'] AND NOT ('actions' = ANY (pages))",
+      // R60-3: an admin's action, once written, can never be changed or deleted.
+      `CREATE FUNCTION admin_history_read_only() RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF OLD.actor_type = 'admin' THEN RAISE EXCEPTION 'Admin actions cannot be changed or deleted'; END IF;
+         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+       END $$`,
+      'CREATE TRIGGER admin_history_read_only BEFORE UPDATE OR DELETE ON status_history FOR EACH ROW EXECUTE FUNCTION admin_history_read_only()',
+      'CREATE INDEX idx_history_admin ON status_history (created_at DESC, id DESC) WHERE actor_type = \'admin\'',
     ],
   },
 ];

@@ -1,6 +1,6 @@
 import { DEFAULT_RULES } from '@pawpal/shared';
 import { describe, expect, it } from 'vitest';
-import { fetchInsurance, fetchRules, fetchSupport, insuranceBlock, ruleSummary, saveInsurance, supportSummary } from './rules';
+import { fetchInsurance, fetchRuleVersions, fetchRules, fetchSupport, fromForm, insuranceBlock, ruleEditCheck, ruleSummary, saveInsurance, saveRuleVersion, supportSummary, toForm, versionWhen, withdrawRuleVersion } from './rules';
 
 describe('admin rules page', () => {
   it('loads rules from the server', async () => {
@@ -64,6 +64,45 @@ describe('E4-6 insurance switch on the rules page', () => {
     expect(calls.map(([u, i]) => [u, i?.method])).toEqual([
       ['/api/admin/insurance', 'GET'],
       ['/api/admin/insurance', 'POST'],
+    ]);
+  });
+});
+
+describe('E14-3 rule versions on the rules page', () => {
+  it('shows money in RM and sends sen', () => {
+    const f = toForm(DEFAULT_RULES);
+    expect(f['price.cat']).toBe(40);
+    expect(f['split.caregiverServicePercent']).toBe(85);
+    expect(fromForm({ ...f, 'price.cat': 45.5 })['price.cat']).toBe(4550);
+  });
+
+  it('previews from → to and says why Save is off (R59-6)', () => {
+    const values = { ...toForm(DEFAULT_RULES), 'price.cat': 45 };
+    const ok = ruleEditCheck({ values, effectiveFrom: '2026-11-24', reason: 'Price review' }, DEFAULT_RULES, '2026-11-23');
+    expect(ok).toEqual({ changes: [expect.objectContaining({ from: 'RM40', to: 'RM45' })], block: '' });
+    expect(ruleEditCheck({ values, effectiveFrom: '2026-11-23', reason: 'Price review' }, DEFAULT_RULES, '2026-11-23').block).toBe('A new version can start tomorrow at the earliest');
+    expect(ruleEditCheck({ values, effectiveFrom: '2026-11-24', reason: '' }, DEFAULT_RULES, '2026-11-23').block).toMatch(/reason/);
+    expect(ruleEditCheck({ values: toForm(DEFAULT_RULES), effectiveFrom: '2026-11-24', reason: 'Price review' }, DEFAULT_RULES, '2026-11-23')).toEqual({ changes: [], block: 'Change at least one value' });
+  });
+
+  it('says when a version starts', () => {
+    expect(versionWhen({ state: 'in_effect', effectiveFrom: '2026-10-24' })).toBe('In effect since 24 Oct 2026');
+    expect(versionWhen({ state: 'waiting', effectiveFrom: '2026-11-24' })).toBe('Starts 24 Nov 2026');
+  });
+
+  it('calls the rule version endpoints', async () => {
+    const calls: [string, string][] = [];
+    const fake = (async (url: string, init?: RequestInit) => {
+      calls.push([url, init?.method ?? 'GET']);
+      return new Response('{}');
+    }) as unknown as typeof fetch;
+    await fetchRuleVersions(fake);
+    await saveRuleVersion({ values: {}, effectiveFrom: '2026-11-24', reason: 'x' }, fake);
+    await withdrawRuleVersion('v2', 'Not now', fake);
+    expect(calls).toEqual([
+      ['/api/admin/rules', 'GET'],
+      ['/api/admin/rules', 'POST'],
+      ['/api/admin/rules/v2/withdraw', 'POST'],
     ]);
   });
 });

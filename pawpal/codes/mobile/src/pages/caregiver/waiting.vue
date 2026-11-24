@@ -2,12 +2,12 @@
   <view v-if="v && w" class="content">
     <view class="card" data-test="waiting-card">
       <text class="section">Visit {{ v.index + 1 }} · {{ v.number }}</text>
-      <text class="big" :class="{ limit: w.limitReached && !w.stopped }" data-test="waiting-text">{{ waitingText(w) }}</text>
+      <text class="big" :class="{ limit: w.limitReached && !w.stopped }" data-test="waiting-text">{{ waitingText(w, v?.waitingRules) }}</text>
       <view class="row"><text class="note">Minutes</text><text class="strong" data-test="waiting-minutes">{{ w.started || w.stopped ? `${w.minutes} min` : '—' }}</text></view>
       <view class="row"><text class="note">Fee so far</text><text class="strong" data-test="waiting-fee">{{ formatRM(w.feeSen) }}</text></view>
-      <text class="note" data-test="waiting-rule">{{ WAITING_RULE_TEXT }}</text>
+      <text class="note" data-test="waiting-rule">{{ waitingRuleText(v.waitingRules) }}</text>
       <text class="note">Counts from {{ startText }} (the later of the booked start and when you arrived) until you get in. It is not service time.</text>
-      <text class="note" data-test="waiting-sent">Sent to the owner {{ sentText }}. The owner will be asked to prepay {{ formatRM(WAITING_RULES.maxSen) }}; what is not used goes back to them.</text>
+      <text class="note" data-test="waiting-sent">Sent to the owner {{ sentText }}. The owner will be asked to prepay {{ formatRM(v.waitingRules.maxSen) }}; what is not used goes back to them.</text>
     </view>
 
     <view v-if="w.limitReached && !w.stopped" class="card" data-test="waiting-limit">
@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
-import { WAITING_RULES, WAITING_RULE_TEXT, formatRM, klInstant, timeText, waitingState, waitingText, type VisitTask } from '@pawpal/shared';
+import { formatRM, waitingRuleText, klInstant, timeText, waitingState, waitingText, type VisitTask } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { getVisit } from '@/api/requests';
 import HelpButton from '@/components/HelpButton.vue';
@@ -41,7 +41,7 @@ let id = 0;
 let index = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 
-const w = computed(() => (v.value?.arrivedAt ? waitingState(v.value, now.value) : null));
+const w = computed(() => (v.value?.arrivedAt ? waitingState(v.value, now.value, v.value.waitingRules) : null));
 const klClock = (d: Date) => {
   const kl = new Date(d.getTime() + 8 * 3600_000);
   return timeText(kl.getUTCHours() * 60 + kl.getUTCMinutes());

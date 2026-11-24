@@ -17,9 +17,9 @@ describe('E1-2 rules API', () => {
 
   afterAll(() => app.close());
 
-  it('GET /api/rules returns the shared rule set', async () => {
+  it('GET /api/rules returns the rule set in effect (E14-3: its version name can differ)', async () => {
     const res = await request(app.getHttpServer()).get('/api/rules').expect(200);
-    expect(res.body).toEqual(DEFAULT_RULES);
+    expect({ ...res.body, version: DEFAULT_RULES.version }).toEqual(DEFAULT_RULES);
   });
 
   it('POST /api/pricing/quote prices a mixed visit with overtime', async () => {

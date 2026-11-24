@@ -3,8 +3,8 @@ import { extraFeeStatusText, extraFeeTitle, extraFeeUsedText, overtimeEarnedText
 
 describe('E11-3 extra fees', () => {
   it('names the fee and where it stands (R47-1, R47-5)', () => {
-    expect(extraFeeTitle({ kind: 'overtime', units: 2 })).toBe('Overtime: 30 min · RM20');
-    expect(extraFeeTitle({ kind: 'waiting', units: 6 })).toBe('Waiting: prepay RM25');
+    expect(extraFeeTitle({ kind: 'overtime', units: 2, amountSen: 2000 })).toBe('Overtime: 30 min · RM20');
+    expect(extraFeeTitle({ kind: 'waiting', units: 6, amountSen: 2500 })).toBe('Waiting: prepay RM25');
     expect(extraFeeStatusText({ status: 'requested', payment: null })).toBe('Waiting for you');
     expect(extraFeeStatusText({ status: 'requested', payment: { id: 1, status: 'pending', method: 'tng' } })).toBe('Payment being checked');
     expect(extraFeeStatusText({ status: 'requested', payment: { id: 1, status: 'failed', method: 'tng' } })).toBe('Waiting for you');

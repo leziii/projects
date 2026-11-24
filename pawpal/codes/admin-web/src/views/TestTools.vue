@@ -209,6 +209,12 @@
         <p class="hint">Moves the report's sent time back 12 h, so the visit confirms itself as if the owner did nothing.</p>
       </el-form>
     </el-card>
+
+    <el-card style="max-width: 640px; margin-top: 16px" shadow="never">
+      <template #header>Start the waiting rule version today (E14-3)</template>
+      <el-button type="primary" data-test="rules-start-now" @click="rulesNow">Start it now</el-button>
+      <p class="hint">Moves the start date of the version waiting on Rules to today, so new orders use it without waiting for midnight.</p>
+    </el-card>
   </div>
 </template>
 
@@ -227,6 +233,7 @@ import {
   visitSoon,
   reportDue,
   settleOrderNow,
+  startRulesNow,
   finishOrderVisits,
   settleResultText,
   alertLog,
@@ -310,6 +317,16 @@ async function finishVisits() {
   try {
     const r = await finishOrderVisits(orderNumber.value);
     ElMessage.success(`Order ${r.number}: ${r.finished} visit(s) finished`);
+  } catch (err) {
+    ElMessage.error((err as Error).message);
+  }
+}
+
+async function rulesNow() {
+  try {
+    const r = await startRulesNow();
+    if (r.version) ElMessage.success(`Version ${r.version} is now in effect`);
+    else ElMessage.warning('No version is waiting');
   } catch (err) {
     ElMessage.error((err as Error).message);
   }

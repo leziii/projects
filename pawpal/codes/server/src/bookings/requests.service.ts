@@ -37,7 +37,9 @@ import {
   type VisitRun,
   type VisitTask,
   type User,
-  WAITING_RULE_TEXT,
+  waitingRuleText,
+  waitingRulesOf,
+  type RuleSet,
   type OvertimeRequest,
   waitingStart,
   timeText,
@@ -51,9 +53,13 @@ import { SecretBox } from '../files/secret-box';
 import { HistoryService } from '../history/history.service';
 import { MessagesService } from '../messages/messages.service';
 import { VisitRunsService, runKey } from './visit-runs.service';
+import { RulesService } from '../rules/rules.service';
 
 interface Row {
   id: number;
+  rules_version: string;
+  /** E14-3: the order's rule version, filled in after the query. */
+  rules?: RuleSet;
   number: string;
   status: OrderStatus;
   end_reason: OrderEnd | null;
@@ -78,7 +84,7 @@ export interface PausedInfo {
 }
 
 /** A paid order that has (or had) an accept deadline is a request to its caregiver. */
-const SELECT = `SELECT o.id, o.number, o.status, o.end_reason, o.address_id, o.accept_kind, o.pets, o.visits, a.area,
+const SELECT = `SELECT o.id, o.rules_version, o.number, o.status, o.end_reason, o.address_id, o.accept_kind, o.pets, o.visits, a.area,
   ${ts('o.accept_deadline')} AS deadline, ${ts("CASE WHEN o.status = 'pending_accept' THEN o.accept_deadline ELSE o.updated_at END")} AS ended,
   (o.status = 'pending_accept' AND o.accept_deadline > now()) AS is_open
   FROM orders o JOIN addresses a ON a.id = o.address_id
@@ -96,6 +102,7 @@ export class RequestsService {
     private readonly messages: MessagesService,
     private readonly files: FileStore,
     private readonly fees: ExtraFeesService,
+    private readonly rules: RulesService,
   ) {}
 
   async list(user: User): Promise<RequestList> {
@@ -103,6 +110,7 @@ export class RequestsService {
       `${SELECT} AND (o.status = 'pending_accept' OR o.updated_at > now() - make_interval(days => $2)) ORDER BY o.accept_deadline`,
       [user.id, REQUEST_RULES.historyDays],
     );
+    await this.withRules(rows);
     const open = rows.filter((r) => r.is_open).map(card);
     // R25-5: History keeps 30 days, newest first.
     const cutoff = Date.now() - REQUEST_RULES.historyDays * 86_400_000;
@@ -119,11 +127,12 @@ export class RequestsService {
     // Someone else's request looks the same as a missing one.
     if (!rows[0]) throw new NotFoundException({ code: 'REQUEST_NOT_FOUND', message: 'Request not found' });
     const r = rows[0];
+    await this.withRules(rows);
     return {
       ...card(r),
       open: r.is_open,
       end: r.is_open ? null : endOf(r),
-      visitLines: [...r.visits].sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start).map((v) => ({ label: v.label, minutes: v.quote.totalMinutes, incomeSen: visitIncome(v) })),
+      visitLines: [...r.visits].sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start).map((v) => ({ label: v.label, minutes: v.quote.totalMinutes, incomeSen: visitIncome(v, r.rules) })),
       petList: r.pets.map(({ name, kind }) => ({ name, kind })),
       address: r.status === 'accepted' ? await this.addresses.forVisit(r.address_id) : null,
     };
@@ -164,10 +173,10 @@ export class RequestsService {
    */
   async visit(user: User, orderId: number, index: number, now = new Date()): Promise<VisitTask> {
     const { rows } = await this.db.pool.query<{
-      id: number; number: string; status: OrderStatus; level: ServiceLevel; pets: { id: number; name: string; kind: PetKind }[]; visits: OrderVisit[];
+      id: number; number: string; status: OrderStatus; level: ServiceLevel; rules_version: string; pets: { id: number; name: string; kind: PetKind }[]; visits: OrderVisit[];
       address_id: number; area: string; entry_method: EntryMethod; entry_secret: string | null;
     }>(
-      `SELECT o.id, o.number, o.status, o.level, o.pets, o.visits, o.address_id, a.area, o.entry_method, o.entry_secret
+      `SELECT o.id, o.number, o.status, o.level, o.rules_version, o.pets, o.visits, o.address_id, a.area, o.entry_method, o.entry_secret
        FROM orders o JOIN addresses a ON a.id = o.address_id WHERE o.id = $1 AND o.caregiver_id = $2 AND (o.status = 'accepted' OR o.end_reason = 'cancelled')`,
       [orderId, user.id],
     );
@@ -197,7 +206,8 @@ export class RequestsService {
       level: o.level,
       serviceKind: v.quote.serviceKind,
       minMinutes: v.quote.minMinutes,
-      incomeSen: visitIncome(v),
+      incomeSen: visitIncome(v, await this.rules.forVersion(o.rules_version)),
+      waitingRules: waitingRulesOf(await this.rules.forVersion(o.rules_version)),
       petDetails: pets.rows.map((p) => ({ name: p.name, kind: p.kind, breed: p.breed, birth: { year: p.birth_year, month: p.birth_month }, weightKg: p.weight_kg === null ? null : Number(p.weight_kg), healthNote: p.health_note })),
       address: await this.addresses.forVisit(o.address_id).then((a) => (a ? { ...a, area: o.area } : null)),
       entryMethod: o.entry_method,
@@ -404,7 +414,7 @@ export class RequestsService {
         role: 'owner',
         category: 'order',
         title: `${name} is waiting for you`,
-        body: `${name} is waiting at the door from ${timeText(kl.getUTCHours() * 60 + kl.getUTCMinutes())}. ${WAITING_RULE_TEXT} Waiting stops when you let them in.`,
+        body: `${name} is waiting at the door from ${timeText(kl.getUTCHours() * 60 + kl.getUTCMinutes())}. ${waitingRuleText(waitingRulesOf(await this.rules.forOrder(orderId)))} Waiting stops when you let them in.`,
         link: { type: 'order', id: orderId },
       });
     });
@@ -469,6 +479,10 @@ export class RequestsService {
     return { number };
   }
 
+  private async withRules(rows: Row[]): Promise<void> {
+    for (const r of rows) r.rules = await this.rules.forVersion(r.rules_version);
+  }
+
   /** R25-8: a paused caregiver sees why, and nothing else. */
   async paused(user: User): Promise<PausedInfo> {
     if (user.caregiverStatus !== 'suspended') return { paused: false, reason: null };
@@ -491,7 +505,7 @@ const card = (r: Row): RequestCard => {
     visits: r.visits.length,
     area: r.area,
     pets: petsText(r.pets),
-    incomeSen: r.visits.reduce((s, v) => s + visitIncome(v), 0),
+    incomeSen: r.visits.reduce((s, v) => s + visitIncome(v, r.rules), 0),
   };
 };
 

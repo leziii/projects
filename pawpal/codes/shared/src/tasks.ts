@@ -7,6 +7,7 @@ import { visitTime, type EntryMethod } from './booking';
 import { addDays, dayText, klDate, timeText } from './schedule';
 import type { PetKind, ServiceLevel } from './rules';
 import { petsText, type VisitAddress } from './requests';
+import type { WaitingRules } from './waiting';
 
 export const TASK_RULES = { days: 14 } as const;
 
@@ -121,6 +122,8 @@ export interface VisitPet {
 /** What the caregiver's visit page (S09) shows (R34-2 … R34-6). */
 export interface VisitTask extends Task {
   level: ServiceLevel;
+  /** E14-3: the waiting fee of the order's rule version. */
+  waitingRules: WaitingRules;
   serviceKind: 'cat' | 'dog' | 'mixed';
   minMinutes: number;
   incomeSen: number;

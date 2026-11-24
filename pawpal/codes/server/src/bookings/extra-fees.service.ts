@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException, type OnModule
 import {
   PAY_METHODS,
   RuleError,
-  WAITING_RULES,
+  waitingRulesOf,
   OVERTIME_RULES,
   formatRM,
   minuteOfDay,
@@ -26,6 +26,7 @@ import { DbService, ts } from '../db/db.service';
 import { HistoryService } from '../history/history.service';
 import { MessagesService } from '../messages/messages.service';
 import { PaymentsService } from '../payments/payments.service';
+import { RulesService } from '../rules/rules.service';
 
 /** fee-12-0, fee-12-1 …: each try at paying fee 12. */
 const CHARGE_REF = /^fee-(\d+)-(\d+)$/;
@@ -84,6 +85,7 @@ export class ExtraFeesService implements OnModuleInit {
     private readonly payments: PaymentsService,
     private readonly history: HistoryService,
     private readonly messages: MessagesService,
+    private readonly rules: RulesService,
   ) {}
 
   onModuleInit() {
@@ -120,17 +122,18 @@ export class ExtraFeesService implements OnModuleInit {
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query("UPDATE extra_fees SET status = 'declined', updated_at = now() WHERE id = $1 AND status = 'requested'", [feeId]);
       if (!rowCount) throw new ConflictException({ code: 'FEE_CLOSED', message: 'This request is already closed' });
-      await this.history.record(client, { entity: 'extra_fee', entityId: feeId, from: 'requested', to: 'declined', actor: { type: 'owner', id: String(user.id) }, reason: `Owner declined overtime ${overtimeText(fee.units)} for visit ${fee.index + 1} of ${fee.number}` });
-      await this.tellCaregiver(client, fee, 'Overtime declined', `Order ${fee.number}: the owner declined ${overtimeText(fee.units)}. Finish the booked service only.`);
+      await this.history.record(client, { entity: 'extra_fee', entityId: feeId, from: 'requested', to: 'declined', actor: { type: 'owner', id: String(user.id) }, reason: `Owner declined overtime ${overtimeText(fee.units, fee.amountSen / fee.units)} for visit ${fee.index + 1} of ${fee.number}` });
+      await this.tellCaregiver(client, fee, 'Overtime declined', `Order ${fee.number}: the owner declined ${overtimeText(fee.units, fee.amountSen / fee.units)}. Finish the booked service only.`);
     });
     return this.one(user, orderId, feeId, now);
   }
 
   /** E11-1 → E11-3: the waiting request becomes a fee the owner can prepay (R45-4, R47-3). */
   async addWaiting(client: PoolClient, orderId: number, index: number): Promise<void> {
+    const w = waitingRulesOf(await this.rules.forOrder(orderId));
     await client.query(
       "INSERT INTO extra_fees (order_id, idx, kind, units, amount_sen, status) VALUES ($1, $2, 'waiting', $3, $4, 'requested') ON CONFLICT DO NOTHING",
-      [orderId, index, WAITING_RULES.maxMin / WAITING_RULES.stepMin, WAITING_RULES.maxSen],
+      [orderId, index, w.maxMin / w.stepMin, w.maxSen],
     );
   }
 
@@ -144,7 +147,7 @@ export class ExtraFeesService implements OnModuleInit {
     const r = rows[0];
     if (!r || !r.entered) return;
     const v = r.visits[index];
-    const w = waitingState({ date: v.date, start: v.start, arrivedAt: r.arrived, enteredAt: r.entered }, now);
+    const w = waitingState({ date: v.date, start: v.start, arrivedAt: r.arrived, enteredAt: r.entered }, now, waitingRulesOf(await this.rules.forOrder(orderId)));
     if (r.status === 'requested' && w.feeSen === 0) {
       await client.query("UPDATE extra_fees SET status = 'not_needed', used_min = $2, used_sen = 0, updated_at = now() WHERE id = $1 AND status = 'requested'", [r.id, w.minutes]);
     } else if (r.status === 'requested') {
@@ -162,7 +165,7 @@ export class ExtraFeesService implements OnModuleInit {
     const v = r.visits[index];
     const over = minuteOfDay(reportedAt) - serviceEndMin({ start: v.start, minutes: v.quote.totalMinutes, enteredAt: r.entered });
     const units = overtimeUsedUnits(over, r.units);
-    await client.query('UPDATE extra_fees SET used_min = $2, used_sen = $3, updated_at = now() WHERE id = $1', [r.id, units * OVERTIME_RULES.unitMin, units * OVERTIME_RULES.unitSen]);
+    await client.query('UPDATE extra_fees SET used_min = $2, used_sen = $3, updated_at = now() WHERE id = $1', [r.id, units * OVERTIME_RULES.unitMin, units * Math.round(r.amount_sen / r.units)]);
   }
 
   /** R48-1, R48-2: send back what a paid fee did not use. Safe to call again: each fee is refunded once. */
@@ -208,7 +211,7 @@ export class ExtraFeesService implements OnModuleInit {
       if (!rowCount) return false;
       await this.history.record(client, { entity: 'extra_fee', entityId: feeId, from: 'requested', to: 'paid', actor: { type: 'gateway' }, reason: `Owner paid ${fee.kind} ${formatRM(fee.amountSen)} for visit ${fee.index + 1} of ${fee.number}` });
       if (fee.kind === 'overtime') {
-        await this.tellCaregiver(client, fee, `Overtime paid: ${overtimeText(fee.units)}`, `Order ${fee.number}: the owner paid. You may stay until ${overtimeUntilText(fee.visit, fee.units)}.`);
+        await this.tellCaregiver(client, fee, `Overtime paid: ${overtimeText(fee.units, fee.amountSen / fee.units)}`, `Order ${fee.number}: the owner paid. You may stay until ${overtimeUntilText(fee.visit, fee.units)}.`);
       } else {
         await this.tellCaregiver(client, fee, 'Waiting prepaid', `Order ${fee.number}: the owner prepaid waiting (${formatRM(fee.amountSen)}). Wait until they let you in, up to 60 min.`);
       }
@@ -277,6 +280,7 @@ export class ExtraFeesService implements OnModuleInit {
       entryMethod: r.entry_method,
       payment: await this.paymentOf(Number(r.id)),
       used: await this.usedOf(r),
+      waitingRules: waitingRulesOf(await this.rules.forOrder(r.order_id)),
     };
   }
 

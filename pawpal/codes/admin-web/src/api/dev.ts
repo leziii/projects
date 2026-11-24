@@ -56,6 +56,9 @@ export const addTestVisit = (phone: string, date: string, start: number, minutes
 /** Start times for the test visit: every half hour in service hours. */
 export const START_OPTIONS = Array.from({ length: (DAY_END - DAY_START) / 30 + 1 }, (_, i) => DAY_START + i * 30).map((value) => ({ value, label: timeText(value) }));
 
+/** E14-3: start the waiting rule version today. */
+export const startRulesNow = (f?: typeof fetch) => api<{ version: string | null }>('/dev/rules/start-now', {}, f);
+
 /** E13-1 (R53-6): settle an order now instead of waiting for the 10-minute check. */
 export const settleOrderNow = (number: string, f?: typeof fetch) => api<SettleResult>('/dev/order-settled', { number: number.trim().toUpperCase() }, f);
 /** E13-1: mark every visit not final yet as done and confirmed, so the order can settle. */

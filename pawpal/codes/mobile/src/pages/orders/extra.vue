@@ -18,7 +18,7 @@
 
     <view v-else class="card" data-test="waiting-box">
       <text class="line" data-test="waiting-now">{{ waitText }}</text>
-      <text class="note">{{ WAITING_RULE_TEXT }} You prepay {{ formatRM(WAITING_RULES.maxSen) }}; what is not used comes back to you.</text>
+      <text class="note">{{ waitingRuleText(fee.waitingRules) }} You prepay {{ formatRM(fee.waitingRules.maxSen) }}; what is not used comes back to you.</text>
     </view>
 
     <template v-if="fee.status === 'requested'">
@@ -49,14 +49,13 @@ import {
   OVERTIME_RULES,
   PAYMENT_METHODS,
   PAY_METHODS,
-  WAITING_RULES,
-  WAITING_RULE_TEXT,
   extraFeeStatusText,
   extraFeeTitle,
   extraFeeUsedText,
   formatRM,
   overtimeUntilText,
   visitWhen,
+  waitingRuleText,
   waitingState,
   waitingText,
   type ExtraFee,
@@ -79,7 +78,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 const waitText = computed(() => {
   const f = fee.value;
   if (!f?.visit.arrivedAt) return '';
-  return `${f.caregiver} is at the door. ${waitingText(waitingState(f.visit, now.value))}`;
+  return `${f.caregiver} is at the door. ${waitingText(waitingState(f.visit, now.value, f.waitingRules), f.waitingRules)}`;
 });
 const canLetIn = computed(() => fee.value?.entryMethod === 'live_confirm' && !!fee.value.visit.arrivedAt && !fee.value.visit.enteredAt);
 

@@ -3,7 +3,7 @@
  */
 import { visitTime } from './booking';
 import type { OrderVisit } from './orders';
-import { caregiverShare, type PetKind } from './rules';
+import { DEFAULT_RULES, caregiverShare, type PetKind, type RuleSet } from './rules';
 import { dayText, timeText } from './schedule';
 
 export const REQUEST_RULES = { historyDays: 30, tickMs: 60_000 } as const;
@@ -104,7 +104,7 @@ export function petsText(pets: { kind: PetKind }[]): string {
 }
 
 /** The caregiver's 85% of the full price of each visit; promos and credit never change it (R7-3, R23, R24-6). */
-export const visitIncome = (v: Pick<OrderVisit, 'quote'>) => caregiverShare('service', v.quote.total);
+export const visitIncome = (v: Pick<OrderVisit, 'quote'>, r: RuleSet = DEFAULT_RULES) => caregiverShare('service', v.quote.total, r);
 
 export const firstVisitOf = <V extends { date: string; start: number }>(visits: V[]): V => [...visits].sort((a, b) => visitTime(a).getTime() - visitTime(b).getTime())[0];
 

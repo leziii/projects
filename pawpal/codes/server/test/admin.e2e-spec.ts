@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { totpCode } from '../src/admin/totp';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { klDate, tomorrowOf, type ActionLogPage, type RulesAdmin } from '@pawpal/shared';
 import { TEST_ADMIN_PASSWORD, adminLogin } from './admin-helper';
 
 // E2-4: admin accounts are separate from app accounts; each page needs its permission.
@@ -31,7 +32,7 @@ describe('E2-4 admin login', () => {
 
   it('logs in with username, password and authenticator code; logout ends the session', async () => {
     const { username, secret, admin } = await newAdmin();
-    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'test-tools'] });
+    expect(admin).toMatchObject({ username, name: 'Aisha', pages: ['dashboard', 'caregivers', 'pets', 'orders', 'rules', 'promos', 'payments', 'locations', 'cases', 'exceptions', 'reviews', 'money', 'actions', 'test-tools'] });
     const res = await login(` ${username.toUpperCase()} `, totpCode(secret)).expect(200);
     expect(res.body.admin).toEqual(admin);
     expect((await http().get('/api/admin/auth/me').set(bearer(res.body.token)).expect(200)).body).toEqual(admin);
@@ -110,5 +111,41 @@ describe('E2-4 admin login', () => {
     expect((await http().post('/api/dev/admin').send({ username: 'ok-name2', password: TEST_ADMIN_PASSWORD, pages: ['bank'] }).expect(400)).body.code).toBe('BAD_PAGES');
     const { rows } = await app.get(DbService).pool.query('SELECT password_hash FROM admins WHERE username = $1', [username]);
     expect(rows[0].password_hash).not.toContain(TEST_ADMIN_PASSWORD);
+  });
+
+  // E14-4 (round 60): every admin action is in the log, read only.
+  it('logs logins and changes with who, what, before → after and why; rows cannot be changed (R60-1 … R60-5)', async () => {
+    const a = await adminLogin(app, ['rules', 'actions']);
+    const tomorrow = tomorrowOf(klDate(new Date()));
+    const saved = (await http().post('/api/admin/rules').set(a.header).send({ values: { 'price.cat': 4100 }, effectiveFrom: tomorrow, reason: 'Log test price' }).expect(200)).body as RulesAdmin;
+    const v = saved.waiting!.version;
+    await http().post(`/api/admin/rules/${v}/withdraw`).set(a.header).send({ reason: 'Log test withdraw' }).expect(200);
+    const log = async (q: Record<string, string>) => (await http().get('/api/admin/actions').query({ admin: a.username, ...q }).set(a.header).expect(200)).body as ActionLogPage;
+
+    const all = await log({});
+    expect(all.rows.map((r) => [r.kind, r.what, r.change, r.reason, r.link])).toEqual([
+      ['rules', `Rule version ${v}`, 'waiting → withdrawn', 'Log test withdraw', '/rules'],
+      ['rules', `Rule version ${v}`, 'waiting', 'Log test price', '/rules'],
+      ['login', expect.stringMatching(/^Admin login \d+$/), 'logged_in', 'Logged in with password and code', null],
+    ]);
+    expect(all.rows.every((r) => r.admin === a.username)).toBe(true);
+    expect(all).toMatchObject({ total: 3, page: 1 });
+    expect(all.admins).toContain(a.username);
+    expect((await log({ kind: 'login' })).rows).toHaveLength(1);
+    expect((await log({ kind: 'money' })).rows).toHaveLength(0);
+    expect((await log({ from: klDate(new Date()), to: klDate(new Date()) })).rows).toHaveLength(3);
+    expect((await log({ from: tomorrow })).rows).toHaveLength(0);
+    expect((await http().get('/api/admin/actions').query({ kind: 'coffee' }).set(a.header).expect(400)).body.code).toBe('BAD_FILTER');
+
+    // R60-3: the database refuses to change or delete an admin's row.
+    const db = app.get(DbService).pool;
+    const id = all.rows[0].id;
+    await expect(db.query("UPDATE status_history SET reason = 'edited' WHERE id = $1", [id])).rejects.toThrow('Admin actions cannot be changed or deleted');
+    await expect(db.query('DELETE FROM status_history WHERE id = $1', [id])).rejects.toThrow('Admin actions cannot be changed or deleted');
+    expect((await log({})).rows[0].reason).toBe('Log test withdraw');
+
+    // R60-5: only with the page.
+    const other = await adminLogin(app, ['rules']);
+    await http().get('/api/admin/actions').set(other.header).expect(403);
   });
 });

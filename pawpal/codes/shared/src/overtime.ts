@@ -41,13 +41,15 @@ export interface OvertimeInfo {
   choices: OvertimeCheck[];
   /** R46-5: the open request, if any; after E11-3 also a paid one. */
   open: OvertimeRequest | null;
+  /** E14-3: the price of one 15-min unit under the order's rule version. */
+  unitSen: number;
 }
 
 /** R46-2: how many units can still be asked for. */
 export const overtimeMaxUnits = (limitMin: number, bookedMin: number) => Math.max(0, Math.floor((limitMin - bookedMin) / OVERTIME_RULES.unitMin));
 
 /** "30 min · RM20" */
-export const overtimeText = (units: number) => `${units * OVERTIME_RULES.unitMin} min · ${formatRM(units * OVERTIME_RULES.unitSen)}`;
+export const overtimeText = (units: number, unitSen: number = OVERTIME_RULES.unitSen) => `${units * OVERTIME_RULES.unitMin} min · ${formatRM(units * unitSen)}`;
 
 /**
  * R46-3: can the service run `units` × 15 min past `endMin` on `date`? Not into another booked visit (with the travel

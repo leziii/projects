@@ -3,7 +3,7 @@ import { WAITING_RULE_TEXT, canRequestWaiting, waitingFeeSen, waitingState, wait
 
 describe('E11-1 waiting', () => {
   it('charges per started 10 min after 10 free, capped at RM25 (R45-3)', () => {
-    expect([0, 10, 11, 20, 21, 59, 60, 75].map(waitingFeeSen)).toEqual([0, 0, 500, 500, 1000, 2500, 2500, 2500]);
+    expect([0, 10, 11, 20, 21, 59, 60, 75].map((m) => waitingFeeSen(m))).toEqual([0, 0, 500, 500, 1000, 2500, 2500, 2500]);
     expect(WAITING_RULE_TEXT).toBe('First 10 min free, then RM5 per started 10 min, up to 60 min / RM25.');
   });
 

@@ -16,7 +16,7 @@
           <text class="strong" data-test="line-label">{{ l.label }}<text v-if="l.problemOpen" class="warn" data-test="line-problem"> (problem open)</text></text>
           <text class="strong" data-test="line-amount">{{ formatRM(l.caregiverSen) }}</text>
         </view>
-        <text class="note" data-test="line-math">{{ lineMath(l) }}</text>
+        <text class="note" data-test="line-math">{{ lineMath(l, s) }}</text>
       </view>
     </view>
 

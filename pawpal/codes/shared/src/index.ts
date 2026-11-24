@@ -31,10 +31,11 @@ export * from './substitutes';
 export * from './settlements';
 export * from './money';
 export * from './dashboard';
+export * from './admin-orders';
 export * from './reviews';
 
 export const APP_NAME = 'PawPal';
-export const SHARED_VERSION = '0.59.0';
+export const SHARED_VERSION = '0.62.0';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
@@ -49,3 +50,5 @@ export * from './waiting';
 export * from './overtime';
 export * from './extra-fees';
 export * from './problems';
+export * from './rule-versions';
+export * from './action-log';

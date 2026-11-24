@@ -27,6 +27,7 @@ import {
   type SettleResult,
   type SettlementLine,
   type SettlementState,
+  type RuleSet,
   type SettleVisit,
 } from '@pawpal/shared';
 import { DbService, ts } from '../db/db.service';
@@ -36,6 +37,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { RefundsService } from './refunds.service';
 import { VisitRunsService } from './visit-runs.service';
+import { RulesService } from '../rules/rules.service';
 
 
 interface Row {
@@ -61,6 +63,7 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
     private readonly history: HistoryService,
     private readonly messages: MessagesService,
     private readonly config: ConfigService,
+    private readonly rules: RulesService,
   ) {}
 
   onModuleInit() {
@@ -104,8 +107,8 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
   /** R53-2 … R53-5: works out the lines, saves them once and sends the payout. False when another run got there first. */
   private async settle(orderId: number): Promise<boolean> {
     const o = await this.order(orderId);
-    const { visits, fees } = await this.inputs(o);
-    const s = settleOrder(visits, fees);
+    const { visits, fees, rules } = await this.inputs(o);
+    const s = settleOrder(visits, fees, rules);
 
     const made = await this.db.tx(async (client) => {
       const upd = await client.query("UPDATE orders SET settled_at = now(), updated_at = now() WHERE id = $1 AND settled_at IS NULL", [orderId]);
@@ -122,7 +125,7 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** What settlement needs: each visit's price, state and decision, and the fees used (E11-4: the rest went back). */
-  private async inputs(o: Pick<Row, 'id' | 'visits'>): Promise<{ visits: SettleVisit[]; fees: SettleFee[] }> {
+  private async inputs(o: Pick<Row, 'id' | 'visits'>): Promise<{ visits: SettleVisit[]; fees: SettleFee[]; rules: RuleSet }> {
     const orderId = Number(o.id);
     const { rows: runRows } = await this.db.pool.query<{ idx: number; status: SettleVisit['status']; cancel_percent: number | null }>(
       'SELECT idx, status, cancel_percent FROM visit_runs WHERE order_id = $1',
@@ -138,7 +141,7 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
       "SELECT idx, kind, COALESCE(used_sen, amount_sen) AS used FROM extra_fees WHERE order_id = $1 AND status = 'paid'",
       [orderId],
     );
-    return { visits, fees: feeRows.map((f) => ({ index: f.idx, kind: f.kind, usedSen: f.used })) };
+    return { visits, fees: feeRows.map((f) => ({ index: f.idx, kind: f.kind, usedSen: f.used })), rules: await this.rules.forOrder(orderId) };
   }
 
   /** E13-2 S15 (round 54): the caregiver's four totals and latest orders. Only their own orders. */
@@ -159,8 +162,8 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
         if (state === 'paying' || state === 'failed') out.payingSen += amountSen;
         if (state === 'failed') out.fixing = true;
       } else {
-        const { visits, fees } = await this.inputs(o);
-        amountSen = expectedIncome(visits, fees);
+        const { visits, fees, rules } = await this.inputs(o);
+        amountSen = expectedIncome(visits, fees, rules);
         state = (await this.check(Number(o.id)))?.state === 'frozen' ? 'frozen' : 'pending';
         if (state === 'frozen') out.frozenSen += amountSen;
         else out.pendingSen += amountSen;
@@ -190,8 +193,8 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
     let lines: SettlementLine[] = st.lines;
     let amountSen = st.amountSen;
     if (!o.settled) {
-      const { visits, fees } = await this.inputs(o);
-      const e = expectedSettlement(visits, fees);
+      const { visits, fees, rules } = await this.inputs(o);
+      const e = expectedSettlement(visits, fees, rules);
       lines = e.lines;
       amountSen = e.caregiverSen;
     }
@@ -222,6 +225,7 @@ export class SettlementsService implements OnModuleInit, OnModuleDestroy {
         status: x.by === 'caregiver' ? PROBLEM_STATUS_LABEL[x.status as ProblemStatus] : CASE_STATUS_LABEL[x.status as CaseStatus],
       })),
       payout: p ? { amountSen: p.amount_sen, state: p.status === 'succeeded' ? 'paid' : p.status === 'failed' ? 'failed' : 'paying', at: p.at } : null,
+      split: (await this.rules.forOrder(orderId)).split,
     };
   }
 

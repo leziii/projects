@@ -7,7 +7,7 @@ import { visitTime } from './booking';
 import type { OrderVisit } from './orders';
 import { splitDiscount } from './promos';
 import { visitWhen } from './requests';
-import { cancelRefund, formatRM } from './rules';
+import { DEFAULT_RULES, cancelRefund, formatRM, type RuleSet } from './rules';
 import type { VisitRun } from './tasks';
 
 export interface CancelLine {
@@ -28,6 +28,8 @@ export interface CancelPreview {
   orderId: number;
   number: string;
   lines: CancelLine[];
+  /** E14-3: the order's own cancel rule, "24 h or more before a visit: 100% back", … */
+  policy: string[];
 }
 
 /** R43-4: 'started' = money on its way; 'processing' = could not start yet, retried automatically; 'none' = nothing to send. */
@@ -62,7 +64,7 @@ const BLOCKED: Partial<Record<VisitRun['status'], string>> = {
 };
 
 /** R42-1, R42-3: every visit with what cancelling it now would refund. */
-export function cancelLines(visits: Pick<OrderVisit, 'date' | 'start' | 'paidSen'>[], creditSen: number, runs: Pick<VisitRun, 'status'>[], now: Date): CancelLine[] {
+export function cancelLines(visits: Pick<OrderVisit, 'date' | 'start' | 'paidSen'>[], creditSen: number, runs: Pick<VisitRun, 'status'>[], now: Date, r: RuleSet = DEFAULT_RULES): CancelLine[] {
   const credit = creditShares(
     visits.map((v) => v.paidSen),
     creditSen,
@@ -71,7 +73,7 @@ export function cancelLines(visits: Pick<OrderVisit, 'date' | 'start' | 'paidSen
     const base = { index: i, when: visitWhen(v), paidSen: v.paidSen };
     const blocked = BLOCKED[runs[i]?.status ?? 'todo'] ?? (visitTime(v).getTime() <= now.getTime() ? 'Time has started' : null);
     if (blocked) return { ...base, percent: null, refundSen: 0, creditSen: 0, blocked };
-    const { percent, refund } = cancelRefund(visitTime(v), now, v.paidSen);
+    const { percent, refund } = cancelRefund(visitTime(v), now, v.paidSen, r);
     const creditBack = Math.min(refund, Math.round((credit[i] * percent) / 100));
     return { ...base, percent, refundSen: refund, creditSen: creditBack, blocked: null };
   });

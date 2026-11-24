@@ -233,6 +233,9 @@ flowchart LR
 | Order settlement detail (S16) | From S15 or payout message; status line; each visit and fee line with its share (expected before settlement, open problems marked); refunds and problems with links; one payout row; matches settlement; own orders only | ✅ Done (E13-3) |
 | Admin money queue (A13, A14) | Money menu lists refunds, fee refunds, payouts (All / Failed / Processing, failed first); detail with every try, reason, time, who; Send again only on failed, same reference so never paid twice; no manual paid; Check with bank after 30 min processing; landed retry notifies caregiver / owner | ✅ Done (E13-4) |
 | Admin dashboard (A02) | One card per queue (caregivers, pets, exceptions, cases, money failed, money processing >30 min) with counts that match the lists; only allowed pages; 0 grey, failed red; refreshes every minute; health tag kept | ✅ Done (E14-1) |
+| Admin orders (A07, A08) | Orders menu with masked owner, visits, booking and money status; separate booking and money filters, date, number/phone search; detail with visits, money, links, full record; address shown on request and logged; no new edits | ✅ Done (E14-2) |
+| Admin rules with history (A15) | Rules page edits prices, minimum times, extra pet, overtime, waiting, cancel refunds and split as a new version from tomorrow or later; reason and checks with a from → to preview; one waiting version (replace or withdraw); orders keep the version they were paid under; history list | ✅ Done (E14-3) |
+| Admin action log | Action log menu lists every admin action (who, when, what, before → after, reason), newest first, 50 per page, filters by admin, kind and date, links to the item; read only; only admins with the page | ✅ Done (E14-4) |
 | Languages | English + Chinese (Malay later) | Decided |
 | Service area | Caregiver picks areas from one list shared with owner addresses: 12 KL areas + Petaling Jaya (R11-2); admin edits later (E14) | Decided (KF, 29 Oct) |
 | Team | KF + Claude; coding starts only when KF says start | Decided |
@@ -346,6 +349,9 @@ A round ends only when backend and frontend have **0 errors and 0 warnings** (`p
 | E13-3 | ✅ Done · automated tests 0 errors 0 warnings · KF hand test passed (run by Claude with screenshots) | 23 Nov 2026 |
 | E13-4 | ✅ Done · automated tests 0 errors 0 warnings (server 226, shared 216, admin 48, mobile 67, e2e 119) · KF hand test passed (run by Claude with screenshots; fixed: Money list pages of 20, record order, refund-retry queue blocked by old refunds) | 23 Nov 2026 |
 | E14-1 | ✅ Done · automated tests 0 errors 0 warnings (server 227, shared 219, admin 49, mobile 67, e2e 120) · KF hand test passed (run by Claude with screenshots; no fixes needed) | 23 Nov 2026 |
+| E14-2 | ✅ Done · automated tests 0 errors 0 warnings (server 229, shared 222, admin 51, mobile 67, e2e 121) · KF hand test passed (run by Claude with screenshots; no fixes needed) | 23 Nov 2026 |
+| E14-3 | ✅ Done · automated tests 0 errors 0 warnings (server 230, shared 228, admin 55, mobile 67, e2e 122) · KF hand test passed (run by Claude with screenshots; fixed: version names v15 instead of a date, cancel page shows the order's own refund rule) | 23 Nov 2026 |
+| E14-4 | ✅ Done · automated tests 0 errors 0 warnings (server 231, shared 231, admin 57, mobile 67, e2e 123 of 124; the E11-2 overtime test fails only after about 10 pm KL) · KF hand test passed | 23 Nov 2026 |
 
 ### 8.1 Schedule
 
@@ -1088,3 +1094,34 @@ All business rules are decided. Only these remain:
 | R57-5 | Refresh | On open and every minute; server health tag stays at the top |
 | R57-6 | Note | "Normal orders run on their own. Only these queues need you." |
 | R57-7 | Not here | Order search (E14-2), rule history (E14-3), action log (E14-4) |
+
+### Round 58 · 23 Nov 2026 · KF decision (E14-2 admin order search and detail)
+| # | Question | Decision |
+|---|---|---|
+| R58-1 | Orders list (A07) | New Orders menu: number, owner (masked), caregiver, visits ("3 · 1 cancelled"), booking status, money status; 20 per page, newest first |
+| R58-2 | Two filters | Booking status (waiting, accepted, done, cancelled, failed) and money status (paid, refund processing, refunded, paid out, payout failed) are separate and can combine; date range; search by order number or phone |
+| R58-3 | Detail (A08) | Number, owner, caregiver, booking status, paid, refunds; one row per visit (time, caregiver, status, money, report) linking to its exception, case or money item; the order's full action record (who, when, what, why) |
+| R58-4 | Privacy | Address and entry notes hidden behind "Show address"; each view logged (like the IC) |
+| R58-5 | Changes need a reason | No new edit buttons here; changes stay in Exceptions, Cases and Money, which ask for a reason |
+| R58-6 | Not here | Rule history (E14-3), full admin action log (E14-4) |
+
+### Round 59 · 23 Nov 2026 · KF decision (E14-3 admin rules with history)
+| # | Question | Decision |
+|---|---|---|
+| R59-1 | What can change | Prices (cat, dog basic/upgrade, mixed), minimum times, extra pet fee, overtime fee, waiting fee, cancel refunds, caregiver split |
+| R59-2 | What stays fixed | Capacity, accept windows and booking hours (code only) |
+| R59-3 | New version | Saving makes a new version that starts on a date from tomorrow (KL midnight); a version already in effect cannot be edited |
+| R59-4 | Old orders unchanged | An order keeps the version in effect when it was paid, for price, cancel refund, waiting fee, overtime and split |
+| R59-5 | One waiting version | Only one future version at a time; it can be replaced or withdrawn |
+| R59-6 | Safe save | Reason required; values checked (limits, order of tiers); a "from → to" preview before saving |
+| R59-7 | History | List of all versions (start date, who, reason, changes); owners and caregivers see new prices from the start date; full admin action log in E14-4 |
+
+### Round 60 · 23 Nov 2026 · KF decision (E14-4 admin action log)
+| # | Question | Decision |
+|---|---|---|
+| R60-1 | What is logged | Every admin action: caregiver and pet decisions, exception and case decisions, Send again and Check with bank, rule versions, promo codes, insurance switch, address and IC views, admin logins |
+| R60-2 | Each row | When, which admin, what (action and item), before → after, reason |
+| R60-3 | Read only | Nobody can edit or delete a row; the server only adds rows |
+| R60-4 | Page | New "Action log" menu, newest first, 50 per page; filter by admin, kind of action and date; each row links to its item |
+| R60-5 | Who sees it | Only admins given the "Action log" page (KF yes, others not by default) |
+| R60-6 | Not here | Owner and caregiver actions stay in each order's record (E14-2); how long the log is kept is decided before launch |

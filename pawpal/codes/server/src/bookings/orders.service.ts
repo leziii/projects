@@ -224,7 +224,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           JSON.stringify(pets.rows),
           JSON.stringify(visits),
           draft.summary.total,
-          DEFAULT_RULES.version,
+          draft.summary.rulesVersion,
           draft.entry!.method,
           entry.rows[0]?.entry_secret ?? null,
           discount,

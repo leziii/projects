@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { onLoad, onShow, onUnload } from '@dcloudio/uni-app';
+import { currentRules } from '@/api/rules';
 import { BRAND, DEFAULT_RULES, logoDataUrl, priceList, type HealthReport, type User } from '@pawpal/shared';
 import { currentUser, loginUrl } from '@/api/auth';
 import { fetchHealth, healthLabel } from '@/api/health';
@@ -55,7 +56,7 @@ interface InstallPromptEvent extends Event {
 }
 
 const logo = logoDataUrl();
-const prices = priceList();
+const prices = ref(priceList());
 const health = ref<HealthReport | null>(null);
 const hint = ref<InstallHint>('none');
 const user = ref<User | null>(null);
@@ -86,6 +87,7 @@ onLoad(async () => {
 
 onShow(async () => {
   user.value = await currentUser();
+  prices.value = priceList(await currentRules());
 });
 
 /** R18-6: a guest logs in first, then lands on the booking setup. */

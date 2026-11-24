@@ -3,16 +3,27 @@
  * Waiting runs from the later of the booked start and the arrival until entry; it is never service time.
  */
 import { visitTime } from './booking';
-import { formatRM } from './rules';
+import { DEFAULT_RULES, formatRM, type RuleSet } from './rules';
 import { klInstant } from './requests';
 import { timeText } from './schedule';
 
-/** R45-3, R45-4 */
-export const WAITING_RULES = { freeMin: 10, stepMin: 10, stepSen: 500, maxMin: 60, maxSen: 2500 } as const;
+export interface WaitingRules {
+  freeMin: number;
+  stepMin: number;
+  stepSen: number;
+  maxMin: number;
+  maxSen: number;
+}
+
+/** R45-3, R45-4; E14-3: from the order's rule version. */
+export function waitingRulesOf(rules: Pick<RuleSet, 'waiting'> = DEFAULT_RULES): WaitingRules {
+  const w = rules.waiting;
+  return { freeMin: w.freeMinutes, stepMin: w.blockMinutes, stepSen: w.feePerBlock, maxMin: w.maxMinutes, maxSen: Math.ceil((w.maxMinutes - w.freeMinutes) / w.blockMinutes) * w.feePerBlock };
+}
+export const WAITING_RULES: WaitingRules = waitingRulesOf();
 
 /** R45-3: first 10 min free, then RM5 per started 10 min, at most RM25 (11 min → RM5, 75 min → RM25). */
-export function waitingFeeSen(minutes: number): number {
-  const r = WAITING_RULES;
+export function waitingFeeSen(minutes: number, r: WaitingRules = WAITING_RULES): number {
   if (minutes <= r.freeMin) return 0;
   return Math.min(Math.ceil((minutes - r.freeMin) / r.stepMin) * r.stepSen, r.maxSen);
 }
@@ -36,12 +47,12 @@ export interface WaitingState {
 }
 
 /** R45-2, R45-3: where the waiting stands now (or when entry stopped it). */
-export function waitingState(v: { date: string; start: number; arrivedAt: string | null; enteredAt: string | null }, now: Date): WaitingState {
+export function waitingState(v: { date: string; start: number; arrivedAt: string | null; enteredAt: string | null }, now: Date, w: WaitingRules = WAITING_RULES): WaitingState {
   const startAt = waitingStart(v, v.arrivedAt ?? `${v.date} 00:00:00`);
   const end = v.enteredAt ? klInstant(v.enteredAt) : now;
   const raw = Math.max(0, Math.floor((end.getTime() - startAt.getTime()) / 60_000));
-  const minutes = Math.min(raw, WAITING_RULES.maxMin);
-  return { started: end.getTime() >= startAt.getTime(), minutes, feeSen: waitingFeeSen(minutes), limitReached: raw >= WAITING_RULES.maxMin, stopped: !!v.enteredAt, startAt };
+  const minutes = Math.min(raw, w.maxMin);
+  return { started: end.getTime() >= startAt.getTime(), minutes, feeSen: waitingFeeSen(minutes, w), limitReached: raw >= w.maxMin, stopped: !!v.enteredAt, startAt };
 }
 
 const klClock = (d: Date) => {
@@ -50,16 +61,17 @@ const klClock = (d: Date) => {
 };
 
 /** S14 headline: "Waiting 14 min · RM5 so far", "Waiting limit reached · 60 min · RM25", "Waited 14 min · RM5". */
-export function waitingText(s: WaitingState): string {
+export function waitingText(s: WaitingState, w: WaitingRules = WAITING_RULES): string {
   const fee = s.feeSen ? formatRM(s.feeSen) : 'free';
   if (s.stopped) return `Waited ${s.minutes} min · ${fee}`;
   if (!s.started) return `Waiting starts at ${klClock(s.startAt)}, the booked start`;
-  if (s.limitReached) return `Waiting limit reached · ${WAITING_RULES.maxMin} min · ${formatRM(WAITING_RULES.maxSen)}`;
-  return s.feeSen ? `Waiting ${s.minutes} min · ${fee} so far` : `Waiting ${s.minutes} min · free for the first ${WAITING_RULES.freeMin} min`;
+  if (s.limitReached) return `Waiting limit reached · ${w.maxMin} min · ${formatRM(w.maxSen)}`;
+  return s.feeSen ? `Waiting ${s.minutes} min · ${fee} so far` : `Waiting ${s.minutes} min · free for the first ${w.freeMin} min`;
 }
 
 /** The rule in one line, for S14 and the owner's message. */
-export const WAITING_RULE_TEXT = `First ${WAITING_RULES.freeMin} min free, then ${formatRM(WAITING_RULES.stepSen)} per started ${WAITING_RULES.stepMin} min, up to ${WAITING_RULES.maxMin} min / ${formatRM(WAITING_RULES.maxSen)}.`;
+export const waitingRuleText = (w: WaitingRules = WAITING_RULES) => `First ${w.freeMin} min free, then ${formatRM(w.stepSen)} per started ${w.stepMin} min, up to ${w.maxMin} min / ${formatRM(w.maxSen)}.`;
+export const WAITING_RULE_TEXT = waitingRuleText();
 
 /** R45-1: after arriving, before entry, once per visit. */
 export const canRequestWaiting = (t: { status: string; waitingAt: string | null }) => t.status === 'arrived' && !t.waitingAt;

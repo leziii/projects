@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask, type ProblemReport, type AdminProblemRow, type AdminExceptionRow, type ExceptionDetail, type SubstituteCandidate, type SubstituteOffer, type SettleResult, type CaregiverIncome, type OrderSettlement, type MoneyItem, type MoneyDetail, type QueueCount, type AdminExceptionRow as ExRow, type AdminCaseRow as CaseRow, type AdminProblemRow as ProbRow } from '@pawpal/shared';
+import { addDays, confirmByText, entryFromOf, klDate, klInstant, taskTime, visitIncome, type BookingDraft, type LocationFlagRow, type OrderDetail, type OrderPage, type OrderView, type RequestDetail, type RequestList, type TaskList, type AdminCaseRow, type CancelPreview, type CancelResult, type OvertimeInfo, type ExtraFee, type OrderRefunds, type User, visitTime, type AdminReviewRow, type CaregiverReviews, type OrderReview, type Review, type VisitCase, type VisitReport, type VisitTask, type ProblemReport, type AdminProblemRow, type AdminExceptionRow, type ExceptionDetail, type SubstituteCandidate, type SubstituteOffer, type SettleResult, type CaregiverIncome, type OrderSettlement, type MoneyItem, type MoneyDetail, type QueueCount, type AdminOrderPage, type AdminOrderDetail, type AdminOrderAddress, type RulesAdmin, ruleChangeText, tomorrowOf, type AdminExceptionRow as ExRow, type AdminCaseRow as CaseRow, type AdminProblemRow as ProbRow } from '@pawpal/shared';
 import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import { SettlementsService } from '../src/bookings/settlements.service';
 import { ExtraFeesService } from '../src/bookings/extra-fees.service';
 import { TrustService } from '../src/caregivers/trust.service';
 import { DbService } from '../src/db/db.service';
+import { RulesService } from '../src/rules/rules.service';
 import { adminLogin } from './admin-helper';
 
 // Area Cheras: no browser test uses it, so these caregivers never show up there.
@@ -2111,6 +2112,76 @@ describe('E6-1 caregiver sees requests', () => {
     }, 60_000);
   });
 
+  describe('E14-2 admin orders', () => {
+    const fail = (paymentId: number) => http().post(`/api/mock-gateway/payments/${paymentId}/outcome`).send({ outcome: 'failure' }).expect(200);
+    it('booking and money filters are separate; search, dates and the detail with its record (R58-1 … R58-4)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      const admin = await adminLogin(app, ['orders']);
+      const list = async (q: Record<string, string>) => (await http().get('/api/admin/orders').query(q).set(admin.header).expect(200)).body as AdminOrderPage;
+      const one = async (q: Record<string, string>) => (await list({ q: order.number, ...q })).rows.map((r) => [r.booking, r.money]);
+
+      expect(await one({})).toEqual([['waiting', 'unpaid']]);
+      await succeed(paymentId);
+      expect(await one({})).toEqual([['waiting', 'paid']]);
+      await http().post(`/api/requests/${order.id}/accept`).set(auth(cg.token)).expect(200);
+      expect(await one({})).toEqual([['accepted', 'paid']]);
+      await http().post('/api/dev/order-finish').send({ number: order.number }).expect(200);
+      await http().post('/api/dev/order-settled').send({ number: order.number }).expect(200);
+      expect(await one({})).toEqual([['done', 'paying_out']]);
+      const payout = (await db().query('SELECT id::int AS id FROM payments WHERE ref = $1', [`order-${order.id}-payout`])).rows[0].id;
+      await fail(payout);
+      expect(await one({})).toEqual([['done', 'payout_failed']]);
+
+      // R58-2: each filter on its own and together.
+      expect(await one({ booking: 'done' })).toHaveLength(1);
+      expect(await one({ money: 'payout_failed' })).toHaveLength(1);
+      expect(await one({ booking: 'done', money: 'payout_failed' })).toHaveLength(1);
+      expect(await one({ booking: 'cancelled' })).toHaveLength(0);
+      expect(await one({ booking: 'done', money: 'paid' })).toHaveLength(0);
+      const today = klDate(new Date());
+      expect(await one({ from: today, to: today })).toHaveLength(1);
+      expect(await one({ from: addDays(today, 1) })).toHaveLength(0);
+      const byPhone = await list({ q: `0${owner.phone.slice(3)}` });
+      expect(byPhone.rows.map((r) => r.number)).toEqual([order.number]);
+      expect(byPhone.rows[0]).toMatchObject({ owner: `+60 ${owner.phone.slice(3, 5)}-*** ${owner.phone.slice(-4)}`, visits: 2, cancelled: 0 });
+      expect((await http().get('/api/admin/orders').query({ money: 'done' }).set(admin.header).expect(400)).body.code).toBe('BAD_FILTER');
+      const page = await list({ booking: 'done' });
+      expect(page).toMatchObject({ page: 1 });
+      expect(page.rows.length).toBeLessThanOrEqual(20);
+      expect(page.total).toBeGreaterThanOrEqual(1);
+
+      // R58-3: the detail.
+      const d = (await http().get(`/api/admin/orders/${order.id}`).set(admin.header).expect(200)).body as AdminOrderDetail;
+      expect(d).toMatchObject({ number: order.number, booking: 'done', money: 'payout_failed', paidSen: order.paySen, payout: `order-${order.id}-payout`, refundedSen: 0 });
+      expect(d.visitList.map((v) => [v.index, v.status, v.reportSent, v.exception])).toEqual([[0, 'Confirmed', true, false], [1, 'Confirmed', true, false]]);
+      expect(d.log.map((l) => l.what)).toEqual(expect.arrayContaining([expect.stringMatching(/^Settled: RM/), expect.stringMatching(/^Payment failed: /)]));
+      expect(JSON.stringify(d)).not.toContain(address.street);
+
+      // R58-4: the address only on request, and recorded.
+      const a = (await http().post(`/api/admin/orders/${order.id}/address`).set(admin.header).expect(200)).body as AdminOrderAddress;
+      expect(a).toMatchObject({ street: address.street, postcode: address.postcode });
+      const after = (await http().get(`/api/admin/orders/${order.id}`).set(admin.header).expect(200)).body as AdminOrderDetail;
+      expect(after.log[after.log.length - 1]).toMatchObject({ who: `Admin (${admin.username})`, what: 'Address and entry notes shown' });
+
+      const noPage = await adminLogin(app, ['cases']);
+      await http().get('/api/admin/orders').set(noPage.header).expect(403);
+      await http().get(`/api/admin/orders/${order.id}`).set(noPage.header).expect(403);
+    }, 60_000);
+
+    it('a withdrawn order is cancelled with its refund processing, then refunded (R58-2)', async () => {
+      const cg = await caregiver();
+      const { owner, order, paymentId } = await paidOrder(cg);
+      await succeed(paymentId);
+      await http().post(`/api/orders/${order.id}/withdraw`).set(auth(owner.token)).expect(200);
+      const admin = await adminLogin(app, ['orders']);
+      const row = async () => ((await http().get('/api/admin/orders').query({ q: order.number }).set(admin.header).expect(200)).body as AdminOrderPage).rows[0];
+      expect(await row()).toMatchObject({ booking: 'cancelled', money: 'refund_processing' });
+      await succeed((await db().query('SELECT id::int AS id FROM payments WHERE ref = $1', [`order-${order.id}-refund-${paymentId}`])).rows[0].id);
+      expect(await row()).toMatchObject({ booking: 'cancelled', money: 'refunded' });
+    }, 30_000);
+  });
+
   describe('E8-6 location check', () => {
     const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
     const home = { lat: 3.1319, lng: 101.6841 };
@@ -2175,5 +2246,74 @@ describe('E6-1 caregiver sees requests', () => {
       const d = (await http().get(`/api/orders/${order.id}/detail`).set(auth(owner.token)).expect(200)).body as OrderDetail;
       expect(d.runs[0]).toMatchObject({ status: 'arrived', locationRecorded: false });
     });
+  });
+
+  describe('E14-3 rule versions', () => {
+    it('a new version starts later, replaces the waiting one, and each order keeps its own (R59-1 … R59-7)', async () => {
+      const admin = await adminLogin(app, ['rules']);
+      const rulesApi = app.get(RulesService);
+      const get = async () => (await http().get('/api/admin/rules').set(admin.header).expect(200)).body as RulesAdmin;
+      const save = (body: object) => http().post('/api/admin/rules').set(admin.header).send(body);
+      const before = await get();
+      expect(before.current.state).toBe('in_effect');
+      const tomorrow = tomorrowOf(klDate(new Date()));
+
+      // R59-2, R59-3, R59-6: refused changes.
+      expect((await save({ values: { 'capacity.maxPets': 4 }, effectiveFrom: tomorrow, reason: 'More pets' }).expect(400)).body.code).toBe('FIXED_RULE');
+      expect((await save({ values: { 'price.cat': 5000 }, effectiveFrom: klDate(new Date()), reason: 'Price review' }).expect(400)).body.code).toBe('TOO_SOON');
+      expect((await save({ values: { 'price.cat': 5000 }, effectiveFrom: tomorrow, reason: '' }).expect(400)).body.code).toBe('REASON_REQUIRED');
+      expect((await save({ values: { 'price.dogUpgrade': 100 }, effectiveFrom: tomorrow, reason: 'Price review' }).expect(400)).body.code).toBe('BAD_ORDER');
+
+      // R59-3: saved as waiting; today's rules unchanged.
+      let page = (await save({ values: { 'price.cat': 4500 }, effectiveFrom: tomorrow, reason: 'First try' }).expect(200)).body as RulesAdmin;
+      const first = page.waiting!;
+      expect(first).toMatchObject({ effectiveFrom: tomorrow, state: 'waiting', reason: 'First try', admin: admin.username });
+      expect(first.changes.map(ruleChangeText)).toEqual(['Prices · Cat: RM40 → RM45']);
+      // R59-5: saving again replaces it.
+      const values = { 'price.cat': 5000, 'cancel.fullRefundHours': 168, 'cancel.partialRefundPercent': 50, 'split.caregiverServicePercent': 80 };
+      page = (await save({ values, effectiveFrom: tomorrow, reason: 'Price review Dec' }).expect(200)).body as RulesAdmin;
+      const next = page.waiting!;
+      expect(next.version).not.toBe(first.version);
+      expect(page.history.find((h) => h.version === first.version)).toMatchObject({ state: 'withdrawn', withdrawReason: `Replaced by ${next.version}` });
+      expect(page.history.filter((h) => h.state === 'waiting')).toHaveLength(1);
+      expect(next.changes.map((c) => `${c.from} → ${c.to}`)).toEqual(['RM40 → RM50', '24 h → 168 h', '80% → 50%', '85% → 80%']);
+      expect((await http().get('/api/rules').expect(200)).body).toEqual(before.current.rules);
+      expect((await rulesApi.current(new Date(Date.now() + 86_400_000 * 2))).price.cat).toBe(5000);
+
+      // R59-4: an order paid now keeps today's version; one paid under the new version uses its split and refunds.
+      const cg = await caregiver();
+      const cg2 = await caregiver();
+      const old = await paidOrder(cg);
+      const neu = await paidOrder(cg2);
+      for (const [o, c] of [[old, cg], [neu, cg2]] as const) {
+        await succeed(o.paymentId);
+        await http().post(`/api/requests/${o.order.id}/accept`).set(auth(c.token)).expect(200);
+      }
+      expect((await db().query('SELECT rules_version FROM orders WHERE id = $1', [old.order.id])).rows[0].rules_version).toBe(before.current.version);
+      await db().query('UPDATE orders SET rules_version = $2 WHERE id = $1', [neu.order.id, next.version]);
+      const income = async (o: typeof old) => ((await http().get(`/api/requests/${o.order.id}`).set(auth((o === old ? cg : cg2).token)).expect(200)).body as RequestDetail).visitLines.map((l) => l.incomeSen);
+      expect(await income(old)).toEqual([5950, 5950]);
+      expect(await income(neu)).toEqual([5600, 5600]);
+      const percents = async (o: typeof old) => ((await http().get(`/api/orders/${o.order.id}/cancel`).set(auth(o.owner.token)).expect(200)).body as CancelPreview).lines.map((l) => l.percent);
+      expect(await percents(old)).toEqual([100, 100]);
+      expect(await percents(neu)).toEqual([50, 50]);
+      const settle = (await http().get(`/api/caregiver/income/${neu.order.id}`).set(auth(cg2.token)).expect(200)).body as OrderSettlement;
+      expect(settle).toMatchObject({ amountSen: 11200, split: { caregiverServicePercent: 80 } });
+
+      // R59-5: withdraw the waiting one; one in effect cannot be withdrawn.
+      const reason = { reason: 'Not this month' };
+      expect((await http().post(`/api/admin/rules/${next.version}/withdraw`).set(admin.header).send({}).expect(400)).body.code).toBe('REASON_REQUIRED');
+      page = (await http().post(`/api/admin/rules/${next.version}/withdraw`).set(admin.header).send(reason).expect(200)).body as RulesAdmin;
+      expect(page.waiting).toBeNull();
+      expect(page.history.find((h) => h.version === next.version)).toMatchObject({ state: 'withdrawn', withdrawReason: 'Not this month' });
+      expect((await http().post(`/api/admin/rules/${next.version}/withdraw`).set(admin.header).send(reason).expect(409)).body.code).toBe('NOT_WAITING');
+      expect((await http().post(`/api/admin/rules/${before.current.version}/withdraw`).set(admin.header).send(reason).expect(409)).body.code).toBe('NOT_WAITING');
+      // Its orders still use it.
+      expect(await income(neu)).toEqual([5600, 5600]);
+
+      const noPage = await adminLogin(app, ['orders']);
+      await http().get('/api/admin/rules').set(noPage.header).expect(403);
+      await http().post('/api/admin/rules').set(noPage.header).send({}).expect(403);
+    }, 60_000);
   });
 });

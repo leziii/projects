@@ -40,7 +40,7 @@
 
     <view class="card">
       <text class="section">If you cancel</text>
-      <text v-for="t in cancelPolicyText()" :key="t" class="muted" data-test="cancel-policy">• {{ t }}</text>
+      <text v-for="t in cancelPolicyText(rules)" :key="t" class="muted" data-test="cancel-policy">• {{ t }}</text>
       <text class="note" data-test="not-accepted">{{ PAID_NOT_ACCEPTED }}</text>
     </view>
 
@@ -71,6 +71,7 @@
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import {
+  DEFAULT_RULES,
   ENTRY_METHOD_LABEL,
   HEALTH_DECLARATION,
   PAID_NOT_ACCEPTED,
@@ -83,11 +84,13 @@ import {
   type PayProblem,
   type PaymentMethod,
   type Pet,
+  type RuleSet,
 } from '@pawpal/shared';
 import { requireUser } from '@/api/auth';
 import { applyPromo, getCheckout, payNow, removePromo, type Checkout } from '@/api/booking';
 import { ApiError } from '@/api/client';
 import { listPets } from '@/api/pets';
+import { currentRules } from '@/api/rules';
 import { FIX_URL, lineText } from '@/booking';
 import { settleInputs } from '@/inputs';
 
@@ -102,6 +105,7 @@ const pets = ref<Pet[]>([]);
 const method = ref<PaymentMethod>('tng');
 const health = ref(false);
 const busy = ref(false);
+const rules = ref<RuleSet>(DEFAULT_RULES);
 const error = ref('');
 
 const petNames = computed(() => pets.value.filter((p) => draft.value?.petIds.includes(p.id)).map((p) => p.name).join(', '));
@@ -114,6 +118,7 @@ onShow(async () => {
 
 async function load() {
   show(await getCheckout());
+  rules.value = await currentRules();
   pets.value = await listPets();
 }
 

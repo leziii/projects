@@ -4,8 +4,8 @@
 import type { PaymentMethod, PaymentStatus } from './payments';
 import { formatRM } from './rules';
 import { timeText } from './schedule';
-import { OVERTIME_RULES, overtimeText } from './overtime';
-import { WAITING_RULES } from './waiting';
+import { OVERTIME_RULES } from './overtime';
+import type { WaitingRules } from './waiting';
 
 export type ExtraFeeKind = 'overtime' | 'waiting';
 /** requested → paid · declined (overtime) · lapsed (overtime, booked end passed) · withdrawn (caregiver) · not_needed (waiting ended free). */
@@ -30,6 +30,8 @@ export interface ExtraFee {
   payment: { id: number; status: PaymentStatus; method: PaymentMethod | null } | null;
   /** E11-4 (R48-1 … R48-3): what was used once waiting stopped or the report was sent, and the money sent back. */
   used: ExtraFeeUsed | null;
+  /** E14-3: the waiting fee of the order's rule version. */
+  waitingRules: WaitingRules;
 }
 
 export interface ExtraFeeUsed {
@@ -68,7 +70,8 @@ export const overtimeUntilText = (v: { start: number; minutes: number; enteredAt
   timeText(serviceEndMin(v) + units * OVERTIME_RULES.unitMin);
 
 /** O19 title: "Overtime: 30 min · RM20" / "Waiting: prepay RM25". */
-export const extraFeeTitle = (f: Pick<ExtraFee, 'kind' | 'units'>) => (f.kind === 'overtime' ? `Overtime: ${overtimeText(f.units)}` : `Waiting: prepay ${formatRM(WAITING_RULES.maxSen)}`);
+export const extraFeeTitle = (f: Pick<ExtraFee, 'kind' | 'units' | 'amountSen'>) =>
+  f.kind === 'overtime' ? `Overtime: ${f.units * OVERTIME_RULES.unitMin} min · ${formatRM(f.amountSen)}` : `Waiting: prepay ${formatRM(f.amountSen)}`;
 
 const STATUS_TEXT: Record<ExtraFeeStatus, string> = {
   requested: 'Waiting for you',

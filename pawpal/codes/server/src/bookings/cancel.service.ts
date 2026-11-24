@@ -4,6 +4,7 @@ import {
   NOT_STARTED,
   RuleError,
   cancelLines,
+  cancelPolicyText,
   formatRM,
   notCancelledText,
   refundSplitText,
@@ -18,6 +19,7 @@ import {
 import type { PoolClient } from 'pg';
 import { DbService } from '../db/db.service';
 import { HistoryService } from '../history/history.service';
+import { RulesService } from '../rules/rules.service';
 import { MessagesService } from '../messages/messages.service';
 import { PaymentsService } from '../payments/payments.service';
 import { PromosService } from '../promos/promos.service';
@@ -33,6 +35,7 @@ interface Row {
   visits: OrderVisit[];
   credit_sen: number;
   charge_id: number | null;
+  rules_version: string;
 }
 
 const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -52,6 +55,7 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
     private readonly history: HistoryService,
     private readonly messages: MessagesService,
     private readonly config: ConfigService,
+    private readonly rules: RulesService,
   ) {}
 
   onModuleInit() {
@@ -68,7 +72,7 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
   /** R42-1, R42-3: every visit with what cancelling it now would refund. */
   async preview(user: User, id: number, now = new Date()): Promise<CancelPreview> {
     const o = await this.booked(this.db.pool, user, id);
-    return { orderId: o.id, number: o.number, lines: await this.lines(this.db.pool, o, now) };
+    return { orderId: o.id, number: o.number, lines: await this.lines(this.db.pool, o, now), policy: cancelPolicyText(await this.rules.forVersion(o.rules_version)) };
   }
 
   /**
@@ -92,7 +96,7 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
       const failed: CancelResult['failed'] = picks.filter((p) => lines[p.index].blocked).map((p) => ({ index: p.index, reason: notCancelledText(lines[p.index].blocked!) }));
       const go = picks.filter((p) => !lines[p.index].blocked);
       if (go.some((p) => lines[p.index].percent !== p.seen)) {
-        throw new ConflictException({ code: 'AMOUNT_CHANGED', message: 'The refund changed because time passed. Check the new amounts and confirm again.', preview: { orderId: o.id, number: o.number, lines } });
+        throw new ConflictException({ code: 'AMOUNT_CHANGED', message: 'The refund changed because time passed. Check the new amounts and confirm again.', preview: { orderId: o.id, number: o.number, lines, policy: cancelPolicyText(await this.rules.forVersion(o.rules_version)) } });
       }
       const pick: CancelLine[] = [];
       for (const p of go) {
@@ -197,7 +201,7 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async booked(conn: PoolClient | DbService['pool'], user: User, id: number, lock = false): Promise<Row> {
-    const { rows } = await conn.query<Row>(`SELECT id, number, owner_id, caregiver_id, status, visits, credit_sen, charge_id FROM orders WHERE id = $1${lock ? ' FOR UPDATE' : ''}`, [id]);
+    const { rows } = await conn.query<Row>(`SELECT id, number, owner_id, caregiver_id, status, visits, credit_sen, charge_id, rules_version FROM orders WHERE id = $1${lock ? ' FOR UPDATE' : ''}`, [id]);
     const o = rows[0];
     if (!o || o.owner_id !== user.id) throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'Order not found' });
     if (o.status !== 'accepted') throw new ConflictException({ code: 'ORDER_NOT_BOOKED', message: 'Only visits of a booked order can be cancelled' });
@@ -206,6 +210,6 @@ export class CancelService implements OnModuleInit, OnModuleDestroy {
 
   private async lines(conn: PoolClient | DbService['pool'], o: Row, now: Date): Promise<CancelLine[]> {
     const map = await this.runs.forOrders([o.id], conn as PoolClient);
-    return cancelLines(o.visits, o.credit_sen, o.visits.map((_, i) => map.get(runKey(o.id, i)) ?? NOT_STARTED), now);
+    return cancelLines(o.visits, o.credit_sen, o.visits.map((_, i) => map.get(runKey(o.id, i)) ?? NOT_STARTED), now, await this.rules.forVersion(o.rules_version));
   }
 }

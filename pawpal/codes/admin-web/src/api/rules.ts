@@ -1,4 +1,21 @@
-import { INSURANCE_NOTE_MAX, formatRM, formatWhatsapp, type Insurance, type RuleSet, type StatusChange, type SupportInfo } from '@pawpal/shared';
+import {
+  INSURANCE_NOTE_MAX,
+  RULE_FIELDS,
+  checkRuleEdit,
+  formatRM,
+  formatWhatsapp,
+  ruleDiff,
+  ruleValues,
+  withValues,
+  type Insurance,
+  type RuleChange,
+  type RuleSet,
+  type RuleValues,
+  type RuleVersion,
+  type RulesAdmin,
+  type StatusChange,
+  type SupportInfo,
+} from '@pawpal/shared';
 import { api } from './payments';
 
 export async function fetchRules(fetcher: typeof fetch = fetch): Promise<RuleSet | null> {
@@ -78,3 +95,43 @@ export function insuranceBlock(form: InsuranceForm, now: Insurance): string {
   if (form.reason.trim().length < 5) return 'Give a reason for the change (at least 5 characters)';
   return '';
 }
+
+/** E14-3 A15 (round 59): every rule version, the one waiting, and saving or withdrawing one. */
+export const fetchRuleVersions = (f?: typeof fetch) => api<RulesAdmin>('/admin/rules', undefined, f);
+export const saveRuleVersion = (body: { values: RuleValues; effectiveFrom: string; reason: string }, f?: typeof fetch) => api<RulesAdmin>('/admin/rules', body, f);
+export const withdrawRuleVersion = (version: string, reason: string, f?: typeof fetch) =>
+  api<RulesAdmin>(`/admin/rules/${encodeURIComponent(version)}/withdraw`, { reason }, f);
+
+/** The form shows money in RM; the server keeps sen. */
+export const toForm = (r: RuleSet): RuleValues =>
+  Object.fromEntries(RULE_FIELDS.map((x) => [x.key, x.unit === 'sen' ? ruleValues(r)[x.key] / 100 : ruleValues(r)[x.key]]));
+export const fromForm = (form: RuleValues): RuleValues =>
+  Object.fromEntries(RULE_FIELDS.map((x) => [x.key, x.unit === 'sen' ? Math.round(Number(form[x.key]) * 100) : Number(form[x.key])]));
+
+export interface RuleEditForm {
+  values: RuleValues;
+  effectiveFrom: string;
+  reason: string;
+}
+
+/** R59-6: the from → to preview, and why Save is off ('' when it can be saved). */
+export function ruleEditCheck(form: RuleEditForm, current: RuleSet, today: string): { changes: RuleChange[]; block: string } {
+  const values = fromForm(form.values);
+  const changes = ruleDiff(current, withValues(values, current.version, current));
+  try {
+    checkRuleEdit({ values, effectiveFrom: form.effectiveFrom, reason: form.reason }, current, today);
+    return { changes, block: '' };
+  } catch (err) {
+    return { changes, block: (err as Error).message };
+  }
+}
+
+/** "Starts 24 Nov 2026" / "In effect since 24 Oct 2026". */
+export function versionWhen(v: Pick<RuleVersion, 'state' | 'effectiveFrom'>): string {
+  const d = new Date(`${v.effectiveFrom}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  if (v.state === 'in_effect') return `In effect since ${d}`;
+  if (v.state === 'waiting') return `Starts ${d}`;
+  return `From ${d}`;
+}
+
+export const VERSION_TAG: Record<RuleVersion['state'], 'success' | 'warning' | 'info' | 'danger'> = { in_effect: 'success', waiting: 'warning', past: 'info', withdrawn: 'danger' };

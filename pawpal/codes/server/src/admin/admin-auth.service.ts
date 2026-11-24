@@ -102,6 +102,11 @@ export class AdminAuthService {
         a.id,
         ADMIN_RULES.sessionHours,
       ]);
+      // E14-4 (R60-1): every admin login is in the action log.
+      await client.query(
+        "INSERT INTO status_history (entity, entity_id, from_status, to_status, actor_type, actor_id, reason) VALUES ('admin_login', $1, NULL, 'logged_in', 'admin', $2, 'Logged in with password and code')",
+        [a.id, a.username],
+      );
       return { result: { token, admin: toAdmin(a) } };
     });
     // Throw after the transaction, so failed-try counts and locks are saved.

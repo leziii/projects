@@ -21,7 +21,10 @@ import Reviews from './views/Reviews.vue';
 import LocationFlags from './views/LocationFlags.vue';
 import TestTools from './views/TestTools.vue';
 import Money from './views/Money.vue';
+import Orders from './views/Orders.vue';
+import OrderDetail from './views/OrderDetail.vue';
 import MoneyDetail from './views/MoneyDetail.vue';
+import ActionLog from './views/ActionLog.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -43,6 +46,8 @@ export const router = createRouter({
     { path: '/caregivers/:id', name: 'caregiver', component: CaregiverReviewDetail, meta: { page: 'caregivers' } },
     { path: '/pets', name: 'pets', component: PetCheck, meta: { page: 'pets' } },
     { path: '/pets/:id', name: 'pet', component: PetCheckDetail, meta: { page: 'pets' } },
+    { path: '/orders', name: 'orders', component: Orders, meta: { page: 'orders' } },
+    { path: '/orders/:id', name: 'order', component: OrderDetail, meta: { page: 'orders' } },
     { path: '/rules', name: 'rules', component: Rules, meta: { page: 'rules' } },
     { path: '/promos', name: 'promos', component: Promos, meta: { page: 'promos' } },
     { path: '/payments', name: 'payments', component: Payments, meta: { page: 'payments' } },
@@ -53,6 +58,7 @@ export const router = createRouter({
     { path: '/reviews', name: 'reviews', component: Reviews, meta: { page: 'reviews' } },
     { path: '/money', name: 'money', component: Money, meta: { page: 'money' } },
     { path: '/money/:id', name: 'money-item', component: MoneyDetail, meta: { page: 'money' } },
+    { path: '/actions', name: 'actions', component: ActionLog, meta: { page: 'actions' } },
     { path: '/test-tools', name: 'test-tools', component: TestTools, meta: { page: 'test-tools' } },
   ],
 });

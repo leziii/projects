@@ -63,7 +63,7 @@
       </template>
       <text v-else class="note" data-test="waiting-owner">Waiting for the owner to confirm</text>
       <view v-if="v.waitingAt" class="row" data-test="waiting-row">
-        <text class="strong" data-test="waiting-line">{{ waitingText(waitingState(v, now)) }}</text>
+        <text class="strong" data-test="waiting-line">{{ waitingText(waitingState(v, now, v.waitingRules), v.waitingRules) }}</text>
         <text class="link" data-test="waiting-details" @click="openWaiting">Details ›</text>
       </view>
       <button v-else class="ghost" data-test="ask-wait" :disabled="busy" @click="askWait">Owner asked me to wait</button>
@@ -72,7 +72,7 @@
     <view v-else-if="v.status === 'in_service'" class="card" data-test="in-service">
       <text class="strong">{{ arrivedText(v.arrivedAt!) }}</text>
       <text class="strong" data-test="entered-at">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
-      <text v-if="v.waitingAt" class="note" data-test="waited-line">{{ waitingText(waitingState(v, now)) }}</text>
+      <text v-if="v.waitingAt" class="note" data-test="waited-line">{{ waitingText(waitingState(v, now, v.waitingRules), v.waitingRules) }}</text>
       <button class="primary" data-test="continue-service" @click="openService">Continue service</button>
     </view>
 
@@ -80,7 +80,7 @@
       <text class="strong">{{ arrivedText(v.arrivedAt!) }}</text>
       <text class="strong">{{ enteredText(v.enteredAt!, v.enteredBy!, 'caregiver') }}</text>
       <text class="strong" data-test="sent-at">{{ sentText(v.reportedAt!, now) }}</text>
-      <text v-if="v.waitingAt" class="note" data-test="waited-earned">{{ waitingText(waitingState(v, now)) }}</text>
+      <text v-if="v.waitingAt" class="note" data-test="waited-earned">{{ waitingText(waitingState(v, now, v.waitingRules), v.waitingRules) }}</text>
       <text v-if="v.overtime && v.overtime.usedSen !== null && v.overtime.usedMin !== null" class="note" data-test="overtime-earned">{{ overtimeEarnedText(v.overtime.usedMin, v.overtime.usedSen) }}</text>
       <text v-if="v.status === 'confirmed'" class="ok" data-test="confirmed-at">✓ {{ confirmedText(v.confirmedAt!, v.confirmedBy!, 'caregiver') }}</text>
       <text v-else-if="v.status === 'disputed'" class="warn" data-test="disputed">The owner raised a problem. Our team is reviewing it and may contact you.</text>
@@ -106,9 +106,9 @@ import {
   ageText,
   arriveFromText,
   arrivedText,
-  WAITING_RULE_TEXT,
   overtimeEarnedText,
   problemKindsFor,
+  waitingRuleText,
   waitingState,
   waitingText,
   canArrive,
@@ -193,7 +193,7 @@ async function enter() {
 
 /** R45-1: the owner is told; S14 shows the clock. */
 async function askWait() {
-  if (!(await confirmBox('Owner asked me to wait', `We will tell the owner. ${WAITING_RULE_TEXT} Waiting stops when you get in.`))) return;
+  if (!(await confirmBox('Owner asked me to wait', `We will tell the owner. ${waitingRuleText(v.value!.waitingRules)} Waiting stops when you get in.`))) return;
   await act(() => waitVisit(id, index));
   if (v.value?.waitingAt) openWaiting();
 }

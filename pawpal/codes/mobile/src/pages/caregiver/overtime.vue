@@ -7,11 +7,11 @@
 
     <view v-if="info.open" class="card" data-test="open-request">
       <template v-if="info.open.status === 'paid'">
-        <text class="strong" data-test="open-text">Owner paid: {{ overtimeText(info.open.units) }}</text>
+        <text class="strong" data-test="open-text">Owner paid: {{ overtimeText(info.open.units, info.unitSen) }}</text>
         <text class="note" data-test="paid-until">You may stay until {{ timeText(info.endMin + info.open.units * OVERTIME_RULES.unitMin) }}.</text>
       </template>
       <template v-else>
-        <text class="strong" data-test="open-text">Asked: {{ overtimeText(info.open.units) }}</text>
+        <text class="strong" data-test="open-text">Asked: {{ overtimeText(info.open.units, info.unitSen) }}</text>
         <text class="note">Waiting for the owner to approve and pay. Until then, do only the booked service.</text>
         <button class="ghost" data-test="withdraw" :disabled="busy" @click="withdraw">Withdraw request</button>
       </template>
@@ -27,10 +27,10 @@
         :data-test="`units-${c.units}`"
         @click="pick(c.units, c.fits)"
       >
-        <text class="strong">{{ overtimeText(c.units) }}</text>
+        <text class="strong">{{ overtimeText(c.units, info.unitSen) }}</text>
         <text :class="c.fits ? 'ok' : 'bad'" :data-test="`fit-${c.units}`">{{ c.fits ? '✓' : '✗' }} {{ c.text }}</text>
       </view>
-      <text class="note">{{ formatRM(OVERTIME_RULES.unitSen) }} per {{ OVERTIME_RULES.unitMin }} min. The owner approves and pays first; unpaid overtime is not done.</text>
+      <text class="note">{{ formatRM(info.unitSen) }} per {{ OVERTIME_RULES.unitMin }} min. The owner approves and pays first; unpaid overtime is not done.</text>
       <button class="primary" data-test="send-overtime" :disabled="busy || !units" @click="send">Send request to the owner</button>
     </view>
 
@@ -93,7 +93,7 @@ function pick(n: number, fits: boolean) {
 }
 
 async function send() {
-  if (!(await confirmBox('Ask for overtime', `Ask the owner for ${overtimeText(units.value)}?`))) return;
+  if (!(await confirmBox('Ask for overtime', `Ask the owner for ${overtimeText(units.value, info.value?.unitSen)}?`))) return;
   await run(() => askOvertime(id, index, units.value));
   if (!error.value) uni.showToast({ title: 'Sent', icon: 'success' });
 }

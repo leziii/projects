@@ -82,11 +82,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
-import { DEFAULT_RULES, EMPTY_DRAFT, PET_STATUS_LABEL, bookingDates, dayText, formatRM, startOptions, timeText, type Address, type BookingDraft, type DraftInput, type Pet } from '@pawpal/shared';
+import { DEFAULT_RULES, EMPTY_DRAFT, PET_STATUS_LABEL, bookingDates, dayText, formatRM, startOptions, timeText, type Address, type BookingDraft, type DraftInput, type Pet, type RuleSet } from '@pawpal/shared';
 import { listAddresses } from '@/api/addresses';
 import { requireUser } from '@/api/auth';
 import { clearDraft, getDraft, saveDraft } from '@/api/booking';
 import { listPets } from '@/api/pets';
+import { currentRules } from '@/api/rules';
 import { OVERTIME_OPTIONS, addVisit, draftInput, levelOptions, lineText, nextHint, nextStep, removeVisit, visitDays } from '@/booking';
 
 const draft = ref<BookingDraft | null>(null);
@@ -99,12 +100,14 @@ const starts = startOptions();
 const pick = ref({ date: '', start: 540 });
 let seq = 0;
 
-const levels = computed(() => levelOptions(pets.value.filter((p) => form.value.petIds.includes(p.id)).map((p) => p.kind)));
+const rules = ref<RuleSet>(DEFAULT_RULES);
+const levels = computed(() => levelOptions(pets.value.filter((p) => form.value.petIds.includes(p.id)).map((p) => p.kind), rules.value));
 const days = computed(() => visitDays(form.value.visits));
 
 onShow(async () => {
   if (!(await requireUser('/pages/booking/index'))) return;
-  const [d, p, a] = await Promise.all([getDraft(), listPets(), listAddresses()]);
+  const [d, p, a, r] = await Promise.all([getDraft(), listPets(), listAddresses(), currentRules()]);
+  rules.value = r;
   pets.value = p.filter((x) => x.status !== 'rejected');
   addresses.value = a;
   dates.value = bookingDates(new Date());
