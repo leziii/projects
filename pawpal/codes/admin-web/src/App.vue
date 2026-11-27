@@ -63,12 +63,12 @@ body { margin: 0; font-family: var(--pp-font); color: var(--pp-ink); background:
 .brand small { font-size: 12px; font-weight: 600; color: var(--pp-muted); }
 .side .el-menu { background: transparent; border: 0; flex: 1; }
 .side .el-menu-item-group__title { padding: 14px 0 4px 12px !important; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pp-muted); }
-.side .el-menu-item { height: 40px; line-height: 40px; margin: 1px 0; padding: 0 12px !important; border-radius: 10px; font-weight: 500; color: var(--pp-ink); }
+.side .el-menu-item { height: 40px; line-height: 40px; margin: 1px 0; padding: 0 12px !important; border-radius: 8px; font-weight: 500; color: var(--pp-ink); }
 .side .el-menu-item:hover { background: var(--pp-background); }
 .side .el-menu-item.is-active { background: var(--pp-primary-soft); color: var(--pp-ink); font-weight: 700; }
 .side .el-menu-item.is-active .menu-icon { color: var(--pp-primary-strong); }
 .menu-icon { margin-right: 10px; color: var(--pp-muted); flex-shrink: 0; }
 .el-main { padding: 28px 32px; }
-.el-card { border-radius: 16px; border-color: var(--pp-border); }
+.el-card { border-radius: 10px; border-color: var(--pp-border); }
 .who { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 8px; border-top: 1px solid var(--pp-border); font-size: 13px; }
 </style>

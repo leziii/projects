@@ -139,19 +139,19 @@ function ownerHome() {
 .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8rpx; }
 .head-text { display: flex; flex-direction: column; }
 .kicker { font-size: 24rpx; color: var(--pp-muted); }
-.title { font-size: 40rpx; font-weight: 800; }
+.title { font-size: 36rpx; font-weight: 700; }
 .links { display: flex; gap: 28rpx; }
 .link { color: var(--pp-primary-strong); font-weight: 700; }
 .card { margin-top: 24rpx; padding: 32rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
 .section { display: flex; align-items: center; gap: 16rpx; font-weight: 700; }
-.sec-icon { width: 60rpx; height: 60rpx; border-radius: 18rpx; background: var(--pp-primary-soft); color: var(--pp-primary-strong); display: flex; align-items: center; justify-content: center; }
+.sec-icon { width: 56rpx; height: 56rpx; border-radius: 12rpx; background: var(--pp-primary-soft); color: var(--pp-primary-strong); display: flex; align-items: center; justify-content: center; }
 .row { display: flex; justify-content: space-between; align-items: center; }
-.req { margin-top: 20rpx; padding: 24rpx; border-radius: 28rpx; background: var(--pp-primary); color: var(--pp-ink); }
+.req { margin-top: 20rpx; padding: 24rpx; border-radius: 12rpx; background: var(--pp-primary); color: var(--pp-ink); }
 .req .note { color: var(--pp-ink); }
 .tag { padding: 6rpx 20rpx; border-radius: 999rpx; font-size: 24rpx; font-weight: 700; background: var(--pp-surface); color: var(--pp-primary-strong); }
 .tag.urgent { background: var(--pp-ink); color: var(--pp-primary); }
 .left { font-weight: 700; font-size: 26rpx; }
 .line { display: block; margin-top: 10rpx; font-size: 28rpx; font-weight: 600; }
-.ghost { margin-top: 24rpx; color: var(--pp-primary-strong); background: var(--pp-surface); border: 3rpx solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-weight: 700; }
+.ghost { margin-top: 24rpx; color: var(--pp-primary-strong); background: var(--pp-surface); border: 2rpx solid var(--pp-primary-strong); border-radius: var(--pp-radius-button); font-weight: 700; }
 .note { display: block; font-size: 26rpx; color: var(--pp-muted); margin-top: 6rpx; }
 </style>

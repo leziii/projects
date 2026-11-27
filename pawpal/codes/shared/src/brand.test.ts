@@ -44,8 +44,8 @@ describe('brand: Honey & Tan', () => {
     const vars = brandCssVars();
     expect(vars['--pp-primary']).toBe('#E8B65C');
     expect(vars['--pp-primary-strong']).toBe('#8A5A22');
-    expect(vars['--pp-background']).toBe('#FBF6EE');
-    expect(vars['--pp-radius-button']).toBe('999px');
+    expect(vars['--pp-background']).toBe('#F6F1E8');
+    expect(vars['--pp-radius-button']).toBe('8px');
     expect(Object.keys(vars)).toHaveLength(Object.keys(c).length + 4);
   });
 
@@ -67,7 +67,7 @@ describe('installable app (PWA)', () => {
   it('manifest has what Android and iPhone need to install', async () => {
     const { webManifest } = await import('./brand');
     const m = webManifest();
-    expect(m).toMatchObject({ name: 'PawPal', start_url: '/', display: 'standalone', theme_color: '#E8B65C', background_color: '#FBF6EE' });
+    expect(m).toMatchObject({ name: 'PawPal', start_url: '/', display: 'standalone', theme_color: '#E8B65C', background_color: '#F6F1E8' });
     expect(m.icons.map((i) => `${i.sizes} ${i.purpose}`)).toEqual(['192x192 any', '512x512 any', '512x512 maskable']);
   });
 

@@ -36,7 +36,7 @@ export interface Brand {
   font: string;
   fontUrl: string;
   radius: { card: number; button: number };
-  /** Soft shadow under cards and bars. */
+  /** Shadow under cards and bars: none, cards use a thin border (plainer look, 27 Nov 2026). */
   shadow: string;
   /** Square logo mark, 64×64 viewBox. Also the app icon. */
   logoSvg: string;
@@ -49,7 +49,7 @@ export const BRAND: Brand = {
     primary: '#E8B65C',
     primarySoft: '#F6E7C8',
     primaryStrong: '#8A5A22',
-    background: '#FBF6EE',
+    background: '#F6F1E8',
     surface: '#FFFFFF',
     ink: '#2E2218',
     muted: '#7A6550',
@@ -61,10 +61,10 @@ export const BRAND: Brand = {
   },
   font: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
   fontUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
-  radius: { card: 20, button: 999 },
-  shadow: '0 1px 2px rgba(80, 55, 20, 0.06), 0 6px 20px rgba(80, 55, 20, 0.06)',
+  radius: { card: 10, button: 8 },
+  shadow: 'none',
   logoSvg:
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#E8B65C"/>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#E8B65C"/>' +
     '<path d="M12 32 32 15l20 17v18H12z" fill="#FFFFFF"/><circle cx="32" cy="40" r="5" fill="#8A5A22"/>' +
     '<circle cx="25" cy="32" r="2.6" fill="#8A5A22"/><circle cx="30" cy="28" r="2.6" fill="#8A5A22"/>' +
     '<circle cx="35" cy="28" r="2.6" fill="#8A5A22"/><circle cx="40" cy="32" r="2.6" fill="#8A5A22"/></svg>',

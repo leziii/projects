@@ -57,9 +57,9 @@ onUnmounted(() => clearInterval(timer));
 h2 { margin: 0; font-size: 26px; font-weight: 800; }
 .note { color: var(--pp-muted); margin: 6px 0 24px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; max-width: 1100px; }
-.card { display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 16px; border: 1px solid var(--pp-border); text-decoration: none; color: inherit; background: var(--pp-surface); box-shadow: var(--pp-shadow); transition: border-color 0.15s, transform 0.15s; }
-.card:hover { border-color: var(--pp-primary-strong); transform: translateY(-1px); }
-.tile { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: var(--pp-background); color: var(--pp-muted); margin-bottom: 4px; }
+.card { display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 10px; border: 1px solid var(--pp-border); text-decoration: none; color: inherit; background: var(--pp-surface); box-shadow: var(--pp-shadow); transition: border-color 0.15s; }
+.card:hover { border-color: var(--pp-primary-strong); }
+.tile { width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--pp-background); color: var(--pp-muted); margin-bottom: 4px; }
 .count { font-size: 30px; font-weight: 800; line-height: 1.1; }
 .label { font-weight: 600; }
 .sub { font-size: 13px; color: var(--pp-muted); }

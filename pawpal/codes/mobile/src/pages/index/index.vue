@@ -11,10 +11,11 @@
     </view>
 
     <view class="hero">
-      <view class="hero-paw"><PpIcon name="paw" :size="150" :weight="1.4" /></view>
-      <text class="hero-kicker">Home visits · cats and dogs</text>
-      <text class="hero-title">Checked carers visit your pets at home</text>
-      <button class="hero-btn" data-test="book-now" @click="bookNow">Book a visit <PpIcon name="arrow" :size="18" :weight="2.4" /></button>
+      <view class="hero-text">
+        <text class="hero-title">Away this weekend?</text>
+        <text class="hero-sub">A checked carer comes to your home to feed and look after your cat or dog.</text>
+      </view>
+      <button class="hero-btn" data-test="book-now" @click="bookNow">Book a visit</button>
     </view>
 
     <view v-if="hint === 'prompt'" class="card install" data-test="install">
@@ -27,26 +28,23 @@
       <text class="note">Tap the Share button, then "Add to Home Screen".</text>
     </view>
 
-    <view class="section-head">
-      <text class="section-title">Services & prices</text>
-      <text v-if="user" class="orders-link" data-test="my-orders" @click="myOrders">My orders ›</text>
-    </view>
-    <view class="services" data-test="prices">
-      <view v-for="(row, i) in prices" :key="row.service" class="svc" :class="{ wide: i >= 3 }">
-        <view class="svc-icon"><PpIcon :name="SERVICE_ICONS[i] ?? 'paw'" /></view>
-        <view class="svc-text">
-          <text class="svc-name">{{ row.service }}</text>
-          <text class="price">{{ row.price }}<text v-if="row.minMinutes" class="muted"> · ≥{{ row.minMinutes }} min</text></text>
+    <view class="list">
+      <view class="section-head">
+        <text class="section-title">Prices per visit</text>
+        <text v-if="user" class="orders-link" data-test="my-orders" @click="myOrders">My orders ›</text>
+      </view>
+      <view data-test="prices">
+        <view v-for="(row, i) in prices" :key="row.service" class="svc">
+          <view class="svc-icon"><PpIcon :name="SERVICE_ICONS[i] ?? 'paw'" :size="20" :weight="1.8" /></view>
+          <view class="svc-text">
+            <text class="svc-name">{{ row.service }}</text>
+            <text v-if="row.minMinutes" class="muted">At least {{ row.minMinutes }} min</text>
+          </view>
+          <text class="price">{{ row.price }}</text>
         </view>
       </view>
-    </view>
-
-    <view class="trust">
-      <PpIcon name="shield" :size="22" />
-      <view class="trust-text">
-        <text class="note">Max {{ DEFAULT_RULES.capacity.maxPets }} pets, max {{ DEFAULT_RULES.capacity.maxDogs }} dogs per booking.</text>
-        <text class="note">Pets need a profile and health check.</text>
-      </view>
+      <text class="note">Max {{ DEFAULT_RULES.capacity.maxPets }} pets, max {{ DEFAULT_RULES.capacity.maxDogs }} dogs per booking.</text>
+      <text class="note">Pets need a profile and health check.</text>
     </view>
 
     <text class="health">{{ healthLabel(health) }}</text>
@@ -131,37 +129,32 @@ onUnload(() => {
 </script>
 
 <style>
-.content { display: flex; flex-direction: column; gap: 32rpx; padding: 40rpx 32rpx; }
-.brand { display: flex; align-items: center; gap: 20rpx; }
-.logo { width: 88rpx; height: 88rpx; }
+.content { display: flex; flex-direction: column; gap: 24rpx; padding: 24rpx 32rpx; }
+.brand { display: flex; align-items: center; gap: 16rpx; }
+.logo { width: 64rpx; height: 64rpx; }
 .brand-text { flex: 1; min-width: 0; }
-.title { display: block; font-size: 40rpx; font-weight: 800; color: var(--pp-ink); }
+.title { display: block; font-size: 32rpx; font-weight: 700; color: var(--pp-ink); }
 .sub { display: block; color: var(--pp-muted); font-size: 22rpx; white-space: nowrap; }
 .account { color: var(--pp-primary-strong); font-weight: 700; font-size: 28rpx; padding: 12rpx 0 12rpx 16rpx; }
-.hero { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 20rpx; padding: 44rpx; border-radius: 48rpx; background: var(--pp-primary); color: var(--pp-ink); }
-.hero-paw { position: absolute; right: -40rpx; bottom: -50rpx; opacity: 0.22; color: var(--pp-primary-strong); }
-.hero-kicker { font-size: 22rpx; font-weight: 700; letter-spacing: 2rpx; text-transform: uppercase; }
-.hero-title { max-width: 520rpx; font-size: 46rpx; line-height: 1.2; font-weight: 800; }
-.hero-btn { align-self: flex-start; display: flex; align-items: center; gap: 12rpx; margin: 8rpx 0 0; padding: 0 44rpx; height: 96rpx; border-radius: 999rpx; background: var(--pp-ink); color: var(--pp-surface); font-size: 30rpx; font-weight: 700; }
-.section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: -12rpx; }
-.section-title { font-size: 34rpx; font-weight: 700; }
+.hero { display: flex; flex-direction: column; gap: 24rpx; padding: 32rpx; border-radius: var(--pp-radius-card); background: var(--pp-primary); color: var(--pp-ink); }
+.hero-text { display: flex; flex-direction: column; gap: 8rpx; }
+.hero-title { font-size: 40rpx; line-height: 1.25; font-weight: 700; }
+.hero-sub { font-size: 26rpx; line-height: 1.45; }
+.hero-btn { align-self: flex-start; margin: 0; padding: 0 36rpx; height: 84rpx; line-height: 84rpx; border-radius: var(--pp-radius-button); background: var(--pp-ink); color: var(--pp-surface); font-size: 28rpx; font-weight: 700; }
+.list { display: flex; flex-direction: column; padding: 8rpx 32rpx 28rpx; border-radius: var(--pp-radius-card); background: var(--pp-surface); border: 1px solid var(--pp-border); }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; padding: 20rpx 0 12rpx; }
+.section-title { font-size: 30rpx; font-weight: 700; }
 .orders-link { color: var(--pp-primary-strong); font-weight: 700; font-size: 26rpx; }
-.services { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20rpx; }
-.svc { display: flex; flex-direction: column; gap: 16rpx; padding: 24rpx; border-radius: 36rpx; background: var(--pp-surface); box-shadow: var(--pp-shadow); }
-.svc.wide { grid-column: span 3; flex-direction: row; align-items: center; padding: 20rpx 24rpx; }
-.svc-icon { width: 76rpx; height: 76rpx; border-radius: 22rpx; display: flex; align-items: center; justify-content: center; background: var(--pp-primary-soft); color: var(--pp-primary-strong); }
-.svc-text { display: flex; flex-direction: column; gap: 4rpx; flex: 1; }
-.svc.wide .svc-text { flex-direction: row; justify-content: space-between; align-items: center; gap: 16rpx; }
-.svc-name { font-weight: 700; font-size: 28rpx; }
-.price { color: var(--pp-primary-strong); font-weight: 700; font-size: 26rpx; }
-.svc.wide .price { text-align: right; max-width: 62%; }
-.muted { color: var(--pp-muted); font-weight: 400; }
-.svc:not(.wide) .muted { display: block; font-size: 22rpx; }
+.svc { display: flex; align-items: center; gap: 20rpx; padding: 20rpx 0; border-top: 1px solid var(--pp-border); }
+.svc-icon { width: 72rpx; height: 72rpx; border-radius: 12rpx; display: flex; align-items: center; justify-content: center; background: var(--pp-primary-soft); color: var(--pp-primary-strong); }
+.svc-text { display: flex; flex-direction: column; gap: 2rpx; flex: 1; min-width: 0; }
+.svc-name { font-weight: 600; font-size: 28rpx; }
+.price { color: var(--pp-primary-strong); font-weight: 700; font-size: 26rpx; text-align: right; max-width: 52%; }
+.muted { color: var(--pp-muted); font-size: 22rpx; }
 .card { padding: 28rpx; background: var(--pp-surface); border: 1px solid var(--pp-border); border-radius: var(--pp-radius-card); }
 .card-title { display: block; font-weight: 700; margin-bottom: 12rpx; }
-.note { display: block; font-size: 26rpx; color: var(--pp-muted); margin-top: 6rpx; }
-.trust { display: flex; gap: 20rpx; align-items: flex-start; padding: 24rpx 28rpx; border-radius: 32rpx; background: var(--pp-primary-soft); color: var(--pp-primary-strong); }
-.trust .note { color: var(--pp-ink); margin-top: 0; }
+.note { display: block; font-size: 24rpx; color: var(--pp-muted); margin-top: 8rpx; }
+.list .note:first-of-type { padding-top: 16rpx; border-top: 1px solid var(--pp-border); }
 .primary { margin-top: 20rpx; background: var(--pp-primary-strong); color: var(--pp-surface); border-radius: var(--pp-radius-button); font-weight: 600; }
-.health { font-size: 24rpx; color: var(--pp-muted); text-align: center; }
+.health { font-size: 22rpx; color: var(--pp-muted); text-align: center; }
 </style>
