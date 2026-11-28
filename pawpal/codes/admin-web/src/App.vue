@@ -59,11 +59,12 @@ async function logout() {
 body { margin: 0; font-family: var(--pp-font); color: var(--pp-ink); background: var(--pp-background); }
 /* Menu and page scroll separately: the window never scrolls, each column does (KF, 28 Nov 2026). */
 .shell { height: 100vh; overflow: hidden; }
-.side { height: 100vh; overflow-y: auto; overscroll-behavior: contain; background: var(--pp-surface); border-right: 1px solid var(--pp-border); padding: 0 12px; display: flex; flex-direction: column; }
+.side { height: 100vh; overflow: hidden; background: var(--pp-surface); border-right: 1px solid var(--pp-border); padding: 0 12px; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 10px; margin: 20px 8px 12px; }
 .brand-text { display: flex; flex-direction: column; font-size: 18px; font-weight: 800; line-height: 1.15; }
 .brand small { font-size: 12px; font-weight: 600; color: var(--pp-muted); }
-.side .el-menu { background: transparent; border: 0; flex: 1; }
+.side .el-menu { background: transparent; border: 0; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.side .brand, .side .who { flex-shrink: 0; }
 .side .el-menu-item-group__title { padding: 14px 0 4px 12px !important; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pp-muted); }
 .side .el-menu-item { height: 40px; line-height: 40px; margin: 1px 0; padding: 0 12px !important; border-radius: 8px; font-weight: 500; color: var(--pp-ink); }
 .side .el-menu-item:hover { background: var(--pp-background); }
